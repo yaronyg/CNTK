@@ -194,6 +194,10 @@ namespace CNTK
         DeviceDescriptor(unsigned int deviceId, DeviceKind deviceType)
             : m_deviceId(deviceId), m_deviceType(deviceType)
         {}
+#ifdef SWIGJAVA
+    public:
+        DeviceDescriptor() {DefaultDevice();};
+#endif
 
     private:
         unsigned int m_deviceId;
@@ -1673,7 +1677,7 @@ private:
         Variable NonCompositePreservingCopy() const;
 
     private:
-#ifdef SWIGCSHARP
+#ifdef SWIG
     public:
         // TODO: a better way to get hash value?
         size_t GetHashValue()
