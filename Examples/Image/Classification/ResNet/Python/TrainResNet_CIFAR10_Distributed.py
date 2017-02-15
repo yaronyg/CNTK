@@ -18,6 +18,7 @@ from cntk.learner import momentum_sgd, learning_rate_schedule, momentum_as_time_
 from _cntk_py import set_computation_network_trace_level
 from cntk.device import set_default_device, gpu
 from cntk.distributed import data_parallel_distributed_learner, block_momentum_distributed_learner, Communicator
+from cntk.training_session import *
 
 from resnet_models import *
 
@@ -105,23 +106,22 @@ def train_and_test(network, trainer, train_source, test_source, progress_printer
         network['label']: train_source.streams.labels
     }
 
-    training_session = cntk.training_session(
-        training_minibatch_source = train_source, 
-        trainer = trainer,
-        mb_size_schedule = cntk.minibatch_size_schedule(minibatch_size),
-        progress_printer = progress_printer,
-        model_inputs_to_mb_source_mapping = input_map, 
-        checkpoint_frequency = epoch_size,
-        checkpoint_filename="ResNet_CIFAR10_DataAug", 
-        progress_frequency=epoch_size,
-        cv_source=test_source,
-        cv_mb_size_schedule=cntk.minibatch_size_schedule(16),
-        restore=False)
-	
+    config = cntk.SessionConfig() \
+        .checkpointing(frequency=epoch_size, filename="ResNet_CIFAR10_DataAug", restore=False) \ 
+        .progress_printing(writers=progress_printer, frequency=epoch_size) \
+        .cross_validation(source=test_source, mb_size=16)
+
     if profiling:
         start_profiler(sync_gpu=True)
         
-    training_session.train()
+    training_session(
+        training_config = TrainingConfig(trainer=trainer, mb_source = train_source, 
+                                         mb_size = minibatch_size,
+                                         var_to_stream = input_map),
+        checkpoint_config = CheckpointConfig(frequency=epoch_size, filename="ResNet_CIFAR10_DataAug", restore=False),
+        progress_config = ProgressConfig(writers=progress_printer, frequency=epoch_size),
+        cv_config = CrossValidationConfig(source=test_source, mb_size=16)
+    ).train()
     
     if profiling:
         stop_profiler()

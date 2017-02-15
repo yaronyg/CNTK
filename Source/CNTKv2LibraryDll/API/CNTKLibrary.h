@@ -4680,6 +4680,118 @@ namespace CNTK
     CNTK_API QuantizedDistributedCommunicatorPtr QuantizedMPICommunicator(bool zeroThresholdFor1Bit, bool useQuantizationForSelfStripe, size_t numQuantizationBits);
 
     ///
+    /// Training configuration.
+    ///
+    class TrainingConfig
+    {
+    public:
+        ///
+        /// Constructor of the training config.
+        /// trainer : an instance of a trainer
+        /// trainingSource: minibatch source
+        /// minibatchSizeSchedule: mb size schedule
+        /// inputVarToStream: var to stream mapping
+        /// maxNumbTrainingSamples
+        /// config : a training configuration
+        ///
+        CNTK_API TrainingConfig(const TrainerPtr& trainer,
+            const MinibatchSourcePtr& trainingSource,
+            const MinibatchSizeSchedule& minibatchSizeSchedule,
+            const std::unordered_map<Variable, StreamInformation>& inputVarToStream,
+            size_t maxNumTrainingSamples = std::numeric_limits<size_t>::max());
+
+    private:
+        friend class TrainingSession;
+        TrainerPtr m_trainer;
+        const MinibatchSourcePtr m_source;
+        const MinibatchSizeSchedule m_mbSize;
+        const std::unordered_map<Variable, StreamInformation> m_varToStream;
+        const size_t m_maxNumSamples;
+    };
+
+    ///
+    /// Cross validation configuration
+    ///
+    class CrossValidationConfig
+    {
+    public:
+        CNTK_API CrossValidationConfig()
+            : m_frequency(0),
+            m_mbSize(MinibatchSizeSchedule(1))
+        {}
+
+        /// Cross validation configuration.
+        /// crossValidationSource: a minibatch source that will be used for cross validation.
+        /// crossValidationSchedule : a minibatch size schedule for cross validation.
+        /// crossValidationFrequencyInSamples: frequency in samples when to perform cross validation.
+        ///
+        CNTK_API CrossValidationConfig(const MinibatchSourcePtr& crossValidationSource,
+            const MinibatchSizeSchedule& crossValidationSchedule = MinibatchSizeSchedule(1),
+            size_t crossValidationFrequencyInSamples = std::numeric_limits<size_t>::max());
+
+    private:
+        friend class TrainingSession;
+        const MinibatchSourcePtr m_source;
+        const MinibatchSizeSchedule m_mbSize;
+        const size_t m_frequency;
+    };
+
+    ///
+    /// Checkpoint configuration
+    ///
+    class CheckpointConfig
+    {
+    public:
+        CNTK_API CheckpointConfig() : m_frequency(0),
+            m_restore(true),
+            m_preserveAll(false)
+        {}
+
+        ///
+        /// Checkpoint configuration.
+        /// checkPointFileName: a file name where the checkpoint will be stored.
+        /// checkpointFrequencyInSamples: frequency in samples when to perform checkpointing.
+        /// restoreFromCheckpointIfExists: if flag is set, the training session will try to restore before training.
+        /// preserveAllCheckpoints: if flag is set, all checkpoints will be preserved.
+        ///
+        CNTK_API CheckpointConfig(
+            const std::wstring& checkPointFileName,
+            size_t checkpointFrequencyInSamples = std::numeric_limits<size_t>::max(),
+            bool restoreFromCheckpointIfExists = true,
+            bool preserveAllCheckpoints = false);
+
+    private:
+        friend class TrainingSession;
+        const std::wstring m_fileName;
+        const bool m_restore;
+        const bool m_preserveAll;
+        const size_t m_frequency;
+    };
+
+    ///
+    /// Progress printing configuration
+    ///
+    class ProgressConfig
+    {
+    public:
+        CNTK_API ProgressConfig() : m_frequency(0)
+        {}
+
+        ///
+        /// Sets progress printing configuration.
+        /// progressWriters: list of progress writers that will be used for training.
+        /// progressFrequency : an approximate number of global samples processed after which the OnProgress
+        ///    callback is called
+        ///
+        CNTK_API ProgressConfig(const std::vector<ProgressWriterPtr>& progressWriters, size_t progressFrequency);
+
+    private:
+        friend class TrainingSession;
+        const std::vector<ProgressWriterPtr> m_writers;
+        const size_t m_frequency;
+    };
+
+    ///
     /// Base abstract class that represents a training session.
     /// Derived classes can redefine different aspects of training, overriding base virtual methods (GetMinibatchSize, OnMinibatchStart, etc.)
     ///
@@ -4690,12 +4802,27 @@ namespace CNTK
             size_t frequency;
             size_t currentIndex;
             size_t sampleCountWhenLastCalled;
-            std::function<void(size_t currentIndex, const DeviceDescriptor&)> action;
+            std::function<bool(size_t currentIndex, const DeviceDescriptor&)> action;
         };
 
     public:
-        /// 
+        ///
         /// Constructor of the training session:
+        /// trainer : an instance of a trainer
+        /// trainingSource: minibatch source
+        /// minibatchSizeSchedule: mb size schedule
+        /// inputVarToStream: var to stream mapping
+        /// maxNumbTrainingSamples
+        /// config : a training configuration
+        ///
+        CNTK_API TrainingSession(
+            const TrainingConfig& training,
+            const ProgressConfig& progress,
+            const CheckpointConfig& checkpointing,
+            const CrossValidationConfig& crossValidation);
+
+        /// !!! DEPRECATED !!!
+        /// Constructor of the training session: 
         /// trainingSource : a minibatch source that will be used for training
         /// trainer : an instance of a trainer
         /// modelInputsToMinibatchSourceMapping : mapping between the input node of the model and the corresponding stream
@@ -4746,7 +4873,7 @@ namespace CNTK
         ///
         virtual size_t GetMinibatchSize()
         {
-            return m_minibatchSizeSchedule[Trainer()->TotalNumberOfSamplesSeen()];
+            return m_training.m_mbSize[Trainer()->TotalNumberOfSamplesSeen()];
         }
 
         ///
@@ -4756,8 +4883,9 @@ namespace CNTK
 
         ///
         /// Optionally overridable callback that is invoked after each minibatch.
+        /// If return value is false, the training will be stopped.
         ///
-        CNTK_API virtual void OnMinibatchEnd() {};
+        CNTK_API virtual bool OnMinibatchEnd() { return true; };
 
         ///
         /// Optionally overridable callback that is invoked before each checkpoint.
@@ -4776,16 +4904,18 @@ namespace CNTK
 
         ///
         /// Optionally overridable callback that is invoked after each cross validation.
+        /// If return value is false, the training will be stopped.
         ///
-        CNTK_API virtual void OnCrossValidationEnd(size_t /*validationIndex*/, double /*averageError*/, size_t /*numberOfSamples*/, size_t /*numberOfMinibatches*/) {};
+        CNTK_API virtual bool OnCrossValidationEnd(size_t /*validationIndex*/, double /*averageError*/, size_t /*numberOfSamples*/, size_t /*numberOfMinibatches*/)
+        {
+            return true;
+        }
 
     protected:
         ///
         /// Accessors.
         ///
-        TrainerPtr Trainer() const { return m_trainer; }
-
-        MinibatchSourcePtr TrainingMinibatchSource() const { return m_trainingSource; }
+        TrainerPtr Trainer() const { return m_training.m_trainer; }
 
     private:
         /// Disallow copy and move construction and assignment
@@ -4800,32 +4930,23 @@ namespace CNTK
         void SaveCheckpoint(size_t currentIndex);
         void SaveFinalCheckpoint();
 
-        void CrossValidate(size_t currentIndex, const DeviceDescriptor& computeDevice);
+        bool CrossValidate(size_t currentIndex, const DeviceDescriptor& computeDevice);
         void ReportProgress(size_t currentIndex);
 
-        // Checkpointing
-        const std::wstring m_checkPointFileName;
-        const bool m_restoreFromCheckpointIfExists;
-        const bool m_saveAllCheckpoints;
-
-        // Training
-        MinibatchSourcePtr m_trainingSource;
-        TrainerPtr m_trainer;
-        std::unordered_map<Variable, StreamInformation> m_modelInputToMinibatchSourceStream;
         size_t m_parallelAfterSamples;
         size_t m_workerRank;
         size_t m_numberOfWorkers;
-        const MinibatchSizeSchedule m_minibatchSizeSchedule;
-        const size_t m_maxNumberOfSamples;
-
-        // Cross validation.
-        MinibatchSourcePtr m_crossValidationSource;
-        const MinibatchSizeSchedule m_crossValidationSchedule;
 
         std::vector<PeriodicAction> m_actions;
+
+        TrainingConfig m_training;
+        CheckpointConfig m_checkpoint;
+        CrossValidationConfig m_cv;
+        ProgressConfig m_progress;
     };
 
     ///
+    /// !!! DEPRECATED !!!
     /// Creates an instance of the training session class. Parameters match the paramters of the TrainingSession constructor.
     ///
     CNTK_API TrainingSessionPtr CreateBasicTrainingSession(
@@ -4942,6 +5063,14 @@ namespace CNTK
         std::unique_ptr<Impl> m_training;
         std::unique_ptr<Impl> m_test;
     };
+
+    /// Creates an instance of the training session class. Parameters match the parameters of the TrainingSession constructor.
+    ///
+    CNTK_API TrainingSessionPtr CreateTrainingSession(
+        const TrainingConfig& training,
+        const ProgressConfig& progress = ProgressConfig(),
+        const CheckpointConfig& checkpointing = CheckpointConfig(),
+        const CrossValidationConfig& crossValidation = CrossValidationConfig());
 }
 
 

@@ -18,6 +18,7 @@ from cntk.distributed import data_parallel_distributed_learner, Communicator
 from cntk.io import ImageDeserializer, MinibatchSource, StreamDef, StreamDefs, FULL_DATA_SWEEP
 from cntk.layers import Placeholder, Block, Convolution2D, Activation, MaxPooling, Dense, Dropout, default_options, Sequential, For
 from cntk.initializer import normal
+from cntk.training_session import *
 
 # default Paths relative to current python file.
 abs_path   = os.path.dirname(os.path.abspath(__file__))
@@ -158,23 +159,15 @@ def train_and_test(network, trainer, train_source, test_source, progress_printer
         network['label']: train_source.streams.labels
     }
 
-    training_session = cntk.training_session(
-        training_minibatch_source = train_source, 
-        trainer = trainer,
-        model_inputs_to_mb_source_mapping = input_map, 
-        mb_size_schedule = cntk.minibatch_size_schedule(minibatch_size), 
-        progress_printer = progress_printer, 
-#        checkpoint_frequency = epoch_size,
-        checkpoint_filename = os.path.join(model_path, model_name), 
-#        save_all_checkpoints = True,
-        progress_frequency = epoch_size, 
-        cv_source = test_source, 
-        cv_mb_size_schedule = cntk.minibatch_size_schedule(minibatch_size),
-#        cv_frequency = epoch_size,
-        restore = restore)
-
     # Train all minibatches 
-    training_session.train()
+    training_session(
+        training_config = TrainingConfig(trainer=trainer, mb_source = train_source, 
+                                         var_to_stream = input_map, 
+                                         mb_size = minibatch_size),
+        progress_config = ProgressConfig(writers=progress_printer, frequency=epoch_size),
+        checkpoint_config = CheckpointConfig(filename = os.path.join(model_path, model_name), restore=restore),
+        cv_config = CrossValidationConfig(source=test_source, mb_size=minibatch_size)
+    ).train()
 
 # Train and evaluate the network.
 def vgg19_train_and_eval(train_data, test_data, num_quantization_bits=32, minibatch_size=128, epoch_size = 1281167, max_epochs=80, 

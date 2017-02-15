@@ -12,6 +12,7 @@ import numpy as np
 import cntk
 import _cntk_py
 import cntk.io.transforms as xforms
+from cntk.training_session import *
 
 # default Paths relative to current python file.
 abs_path   = os.path.dirname(os.path.abspath(__file__))
@@ -123,26 +124,20 @@ def train_and_test(network, trainer, train_source, test_source, progress_writers
         network['label']: train_source.streams.labels
     }
 
-    training_session = cntk.training_session(
-        training_minibatch_source = train_source,
-        trainer = trainer,
-        model_inputs_to_mb_source_mapping = input_map,
-        mb_size_schedule = cntk.minibatch_size_schedule(minibatch_size),
-        progress_printer = progress_writers,
-        checkpoint_frequency = epoch_size,
-        checkpoint_filename = os.path.join(model_path, "ConvNet_CIFAR10_DataAug"),
-#        save_all_checkpoints = False,
-        progress_frequency=epoch_size,
-        cv_source = test_source,
-        cv_mb_size_schedule=cntk.minibatch_size_schedule(minibatch_size),
-#        cv_frequency = epoch_size,
-        restore=restore)
-
     # Train all minibatches
     if profiling:
         cntk.start_profiler(sync_gpu=True)
 
-    training_session.train()
+    training_session(
+        training_config = TrainingConfig(trainer=trainer, mb_source = train_source,
+                                         var_to_stream = input_map, 
+                                         mb_size = minibatch_size),
+        progress_config= ProgressConfig(progress_writers, frequency=epoch_size),
+        checkpoint_config = CheckpointConfig(frequency = epoch_size,
+                                             filename = os.path.join(model_path, "ConvNet_CIFAR10_DataAug"),
+                                             restore = restore),
+        cv_config = CrossValidationConfig(source = test_source, mb_size=minibatch_size)
+    ).train()
 
     if profiling:
         cntk.stop_profiler()
