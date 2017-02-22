@@ -24,45 +24,63 @@ Then, when ``z`` is evaluated or trained (i.e. when either
 :meth:`~cntk.ops.functions.Function.backward` is called, you will see the
 following command-line interface::
 
+    Forward after Parameter node with uid='Parameter28' shape=[](2,)
     [CNTK forward] >>> help
     Your input was not understood. Please use
-            n - execute the next node
-            n <number> - execute the next <number> nodes
-            c - run until end
-            p - print input
-            d - drop into a pdb shell
-            q - quit
+        n - execute the next node
+        n <number> - execute the next <number> nodes
+        n <lambda> - execute until the lambda expression is True. Examples:
+                     Until a Times node is hit:
+                         lambda arg, node: node.op_name == 'Times'
+                     Until a node is hit that has 3 dimensions:
+                         lambda arg, node: len(node.shape) == 3
+                     Until the variance of the input exceeds 1 (np = numpy):
+                         lambda arg, node: np.var(arg) > 1
+        c - run until end
+        p - print input
+        d - drop into a pdb shell
+        q - quit
+    
     [CNTK forward] >>> n
     
-    Forward after Times node with uid='Times29' shape=(2,)
+    Forward after Times node with uid='Times29' shape=[*,*](2,)
+    [CNTK forward] >>> p
+    Input:
+    [[[ 0.  0.]]
+    
+     [[ 0.  0.]]
+    
+     [[ 0.  0.]]
+    
+     [[ 0.  0.]]
+    
+     [[ 0.  0.]]
+    
+     [[ 0.  0.]]
+    
+     [[ 0.  0.]]
+    
+     [[ 0.  0.]]
+    
+     [[ 0.  0.]]
+    
+     [[ 0.  0.]]]
     [CNTK forward] >>> n
     
-    Backward before Times node with uid='Times29' shape=(2,)
-    [CNTK backward] >>> p
-    State: None
-    Root gradients:
-    [[[-0.5  0.5]]
-    
-     [[-0.5  0.5]]
-    
-     [[ 0.5 -0.5]]
-    
-     [[ 0.5 -0.5]]
-    
-     [[ 0.5 -0.5]]
-    
-     [[ 0.5 -0.5]]
-    
-     [[-0.5  0.5]]
-    
-     [[ 0.5 -0.5]]
-    
-     [[ 0.5 -0.5]]
-    
-     [[-0.5  0.5]]]
-    [CNTK backward] >>> c
-    
-    Backward before Parameter node with uid='Parameter28' shape=(2,)
+    Backward before Times node with uid='Times29' shape=[*,*](2,)
+    [CNTK backward] >>> n
+
+    Backward before Parameter node with uid='Parameter28' shape=[](2,)
+
+At every stop the following information is given:
+ * Forward or backward pass
+ * Node type (e.g. 'Times')
+ * Name if given, otherwise it is omitted
+ * uid, which is a unique reference within the graph
+ * shape having the format [dynamic axis](static axes). E.g. ``[*,*](2,)`` 
+   means that the node's output has two dynamic axes (batch and sequence) and 
+   one static axis (2 dimensions)
+
 '''
 
 def save_as_legacy_model(root_op, filename):
@@ -218,6 +236,7 @@ Your input was not understood. Please use
                 commands.pop()
 
             elif commands[-1] == 'd':
+                import pdb
                 pdb.set_trace()
                 done = True
 
