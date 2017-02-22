@@ -573,6 +573,10 @@ namespace CNTK
                 AsStringForErrorReporting(valueShape).c_str(),
                 AsStringForErrorReporting(varShape).c_str());
         }
+
+        auto mask = value->Mask();
+        if ((mask != nullptr) && ((varShape.Rank() + mask->Shape().Rank()) != valueShape.Rank()))
+            InvalidArgument("Invalid Value object; the sum of the rank of the mask and data does not equal the Variable's rank + number of dynamic axes");
     }
 
     template <typename ElementType>
@@ -590,10 +594,7 @@ namespace CNTK
         auto varShape = var.Shape();
         auto valueShape = value->Shape();
         auto numDynamicAxes = var.DynamicAxes().size();
-        auto mask = value->Mask();
-        if ((mask != nullptr) && ((varShape.Rank() + mask->Shape().Rank()) != valueShape.Rank()))
-            InvalidArgument("Invalid Value object; the sum of the rank of the mask and data does not equal the Variable's rank + number of dynamic axes");
-        
+
         if (numDynamicAxes == 0)
             return{ value->Data()->GetMatrix<ElementType>(), nullptr };
 
