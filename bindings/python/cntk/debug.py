@@ -4,6 +4,7 @@
 # ==============================================================================
 
 import sys
+import numpy as np
 
 from cntk import cntk_py
 
@@ -104,19 +105,31 @@ class DebugNode(UserFunction):
                         number = 1
                     understood = ['n'] * number
                 except ValueError:
-                    understood = False
+                    try:
+                        code = eval(new_input[1:])
+                        understood = [code]
+                    except SyntaxError:
+                        understood = False
             elif new_input == 'q':
                 sys.exit(0)
 
             if not understood:
-                print('Your input was not understood. Please use')
-                print('\tn - execute the next node')
-                print('\tn <number> - execute the next <number> nodes')
-                print('\tc - run until end')
-                print('\tp - print input')
-                print('\td - drop into a pdb shell')
-                print('\tq - quit')
-
+                print('''\
+Your input was not understood. Please use
+    n - execute the next node
+    n <number> - execute the next <number> nodes
+    n <lambda> - execute until the lambda expression is True. Examples:
+                 Until a Times node is hit:
+                     lambda arg, node: node.op_name == 'Times'
+                 Until a node is hit that has 3 dimensions:
+                     lambda arg, node: len(node.shape) == 3
+                 Until the variance of the input exceeds 1 (np = numpy):
+                     lambda arg, node: np.var(arg) > 1
+    c - run until end
+    p - print input
+    d - drop into a pdb shell
+    q - quit
+''')
         return understood
 
     def __format_after(self):
@@ -139,35 +152,45 @@ class DebugNode(UserFunction):
         else:
             name = ''
 
-        return "%s node with %suid='%s' shape=%s" % \
-               (node_type, name, self.after.uid, self.after.shape)
+        dyn_axes = '[%s]' % ','.join(['*']*len(self.after.dynamic_axes))
+        
+        return "%s node with %suid='%s' shape=%s%s" % \
+               (node_type, name, self.after.uid, dyn_axes, self.after.shape)
 
     def forward(self, argument, device=None, outputs_to_retain=None):
         print("\nForward after %s" % self.__format_after())
 
+        commands = DebugNode._commands
+
         done = False
         while not done:
-            if not DebugNode._commands:
-                DebugNode._commands = self.__wait_for_input(
+            if not commands:
+                DebugNode._commands = commands = self.__wait_for_input(
                     '[CNTK forward] >>> ')
 
-            if DebugNode._commands[-1] == 'c':
+            if commands[-1] == 'c':
                 done = True
 
-            elif DebugNode._commands[-1] == 'n':
-                DebugNode._commands.pop()
+            elif commands[-1] == 'n':
+                commands.pop()
                 done = True
 
-            elif DebugNode._commands[-1] == 'p':
+            elif commands[-1] == 'p':
                 print('Input: ')
                 print(argument)
-                DebugNode._commands.pop()
+                commands.pop()
 
-            elif DebugNode._commands[-1] == 'd':
-                DebugNode._commands.pop()
+            elif commands[-1] == 'd':
+                commands.pop()
                 import pdb
                 pdb.set_trace()
                 done = True
+
+            elif callable(commands[-1]):
+                if commands[-1](argument, self.after):
+                    commands.pop()
+                else:
+                    done = True
 
         return None, argument
 
@@ -175,28 +198,34 @@ class DebugNode(UserFunction):
         print("\nBackward before %s" % self.__format_after())
 
         done = False
+        commands = DebugNode._commands
         while not done:
-            if not DebugNode._commands:
-                DebugNode._commands = self.__wait_for_input(
+            if not commands:
+                DebugNode._commands = commands = self.__wait_for_input(
                     '[CNTK backward] >>> ')
 
-            if DebugNode._commands[-1] == 'c':
+            if commands[-1] == 'c':
                 done = True
 
-            elif DebugNode._commands[-1] == 'n':
-                DebugNode._commands.pop()
+            elif commands[-1] == 'n':
+                commands
                 done = True
 
-            elif DebugNode._commands[-1] == 'p':
+            elif commands[-1] == 'p':
                 print('State: %s' % str(state))
                 print('Root gradients: ')
                 print(root_gradients)
-                DebugNode._commands.pop()
+                commands.pop()
 
-            elif DebugNode._commands[-1] == 'd':
-                DebugNode._commands.pop()
+            elif commands[-1] == 'd':
                 pdb.set_trace()
                 done = True
+
+            elif callable(commands[-1]):
+                if commands[-1](root_gradients, self.after):
+                    commands.pop()
+                else:
+                    done = True
 
         return root_gradients
 
