@@ -41,15 +41,17 @@ class NDArrayView(cntk_py.NDArrayView):
 
     @staticmethod
     @typemap
-    def from_dense(np_array, device=None, read_only=False):
+    def from_dense(np_array, device=None, copy=True, read_only=False):
         '''
         Create a :class:`NDArrayView` instance from a NumPy array.
 
         Args:
             np_array (numpy.ndarray): NumPy array
-            device (:class:`~cntk.device.DeviceDescriptor`): device this value should be put
-             on
-            read_only (bool): whether the data can be modified or not
+            device (:class:`~cntk.device.DeviceDescriptor`): device this value
+             should be put on
+            copy (bool, optional): whether nd_arrary should be copied
+             internally (default True)
+            read_only (bool, optional): whether the data can be modified or not (default False)
 
         Returns:
             :class:`NDArrayView` instance
@@ -59,17 +61,19 @@ class NDArrayView(cntk_py.NDArrayView):
                     ' and not %s'%type(np_array))
 
         if not _is_c_contiguous(np_array):
-            warnings.warn('data is not C contiguous; rearrange your data/computation to avoid costly data conversions', RuntimeWarning)
+            warnings.warn('data is not C contiguous; rearrange your '
+                    'data/computation to avoid costly data conversions',
+                    RuntimeWarning)
             np_array = np.ascontiguousarray(np_array)
 
         if device is None:
             device = use_default_device()
 
-        return cntk_py.NDArrayView(np_array, device, read_only)
+        return cntk_py.NDArrayView(np_array, device, copy, read_only)
 
     @staticmethod
     @typemap
-    def from_csr(csr_array, device=None, read_only=False):
+    def from_csr(csr_array, device=None, copy=True, read_only=False):
         '''
         Create a :class:`NDArrayView` instance from a SciPy sparse array in CSR
         format.
@@ -79,7 +83,9 @@ class NDArrayView(cntk_py.NDArrayView):
              format
             device (:class:`~cntk.device.DeviceDescriptor`): device this value should be put
              on
-            read_only (bool): whether the data can be modified or not
+            copy (bool, optional): whether nd_arrary should be copied
+             internally (default True)
+            read_only (bool, optional): whether the data can be modified or not (default False)
 
         Returns:
             :class:`NDArrayView` instance
@@ -92,11 +98,12 @@ class NDArrayView(cntk_py.NDArrayView):
             device = use_default_device()
 
         return cntk_py.NDArrayView(csr_array.shape, csr_array.data,
-                csr_array.indptr, csr_array.indices, device, read_only)
+                csr_array.indptr, csr_array.indices, device, copy,
+                read_only)
 
     @staticmethod
     @typemap
-    def from_data(data, device=None, read_only=False):
+    def from_data(data, device=None, copy=True, read_only=False):
         '''
         Create a :class:`NDArrayView` instance from a NumPy or SciPy sparse array in CSR
         format.
@@ -105,7 +112,9 @@ class NDArrayView(cntk_py.NDArrayView):
             data (numpy.ndarray or scipy.sparse.csr.csr_matrix): data
             device (:class:`~cntk.device.DeviceDescriptor`): device this value should be put
              on
-            read_only (bool): whether the data can be modified or not
+            copy (bool, optional): whether nd_arrary should be copied
+             internally (default True)
+            read_only (bool, optional): whether the data can be modified or not (default False)
 
         Returns:
             :class:`NDArrayView` instance
@@ -117,9 +126,9 @@ class NDArrayView(cntk_py.NDArrayView):
             data = np.asarray(data)
 
         if isinstance(data, np.ndarray):
-            ndav = NDArrayView.from_dense(data, device)
+            ndav = NDArrayView.from_dense(data, device, copy=copy)
         elif sparse.issparse(data):
-            ndav = NDArrayView.from_csr(data, device)
+            ndav = NDArrayView.from_csr(data, device, copy=copy)
         else:
             raise TypeError('data type "%s" is not supported. Please '
                     'provide the data as a Python list of NumPy arrays '
@@ -241,11 +250,11 @@ class Value(cntk_py.Value):
             raise TypeError('Variable expected, but got "%s"'%type(var))
 
         cpu_dev = cpu()
-
-        if not var.dynamic_axes:
+        if len(var.dynamic_axes) <= 1:
             # No dynamic axes -> no batch
             data = Value._as_best_data_type(var, data)
-            ndav = NDArrayView.from_data(data, cpu_dev)
+            # TODO check dense
+            ndav = NDArrayView.from_data(data, copy=False)
 
             return cntk_py.Value(ndav)
 
@@ -270,7 +279,7 @@ class Value(cntk_py.Value):
         # move it to the requested device.
         for sample in data:
             sample = Value._as_best_data_type(var, sample)
-            ndav = NDArrayView.from_data(sample, cpu_dev)
+            ndav = NDArrayView.from_data(sample, copy=False)
 
             list_of_ndavs.append(ndav)
 
