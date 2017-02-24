@@ -857,13 +857,16 @@ namespace CNTK
 
     FunctionPtr Slice(const Variable& operand, const Axis& axis, int beginIndex, int endIndex, const std::wstring& name)
     {
-        if (axis.IsStaticAxis())
+        if (((endIndex > 0 && beginIndex >= 0) || (beginIndex < 0 && endIndex <= 0))
+            && (endIndex - beginIndex) <= 0)
         {
-            if ((endIndex - beginIndex) <= 0)
-                InvalidArgument("CNTK::Slice: endIndex (%d) - beginIndex (%d) must be a positive number", endIndex, beginIndex);
-
-            return Internal::Slice(operand, axis, beginIndex, endIndex, name);
+            // range check only applies if both begin and end are from start or both are from end,
+            // otherwise we can't determine anything without knowing the actual dimensions
+            InvalidArgument("CNTK::Slice: endIndex (%d) - beginIndex (%d) must be a positive number", endIndex, beginIndex);
         }
+
+        if (axis.IsStaticAxis())
+            return Internal::Slice(operand, axis, beginIndex, endIndex, name);
 
         if (axis == Axis::DefaultBatchAxis())
             LogicError("Slice is currently unsupported along the batch axis");
@@ -1075,14 +1078,14 @@ namespace CNTK
         }
     }
 
-    FunctionPtr EditDistanceError(const Variable& prediction, const Variable& labels, float subPen, float delPen, float insPen, bool squashInputs, const vector<size_t>& samplesToIgnore, const std::wstring& name)
+    FunctionPtr EditDistanceError(const Variable& prediction, const Variable& labels, float subPen, float delPen, float insPen, bool squashInputs, const vector<size_t>& tokensToIgnore, const std::wstring& name)
     {
         auto additionalProperties = Dictionary();
         additionalProperties[PrimitiveFunction::AttributeNameSubstitutionPenalty] = subPen;
         additionalProperties[PrimitiveFunction::AttributeNameDeletionPenalty] = delPen;
         additionalProperties[PrimitiveFunction::AttributeNameInsertionPenalty] = insPen;
         additionalProperties[PrimitiveFunction::AttributeNameSquashInputs] = squashInputs;
-        additionalProperties[PrimitiveFunction::AttributeNameSamplesToIgnore] = AsDictionaryValueVector(samplesToIgnore);
+        additionalProperties[PrimitiveFunction::AttributeNameTokensToIgnore] = AsDictionaryValueVector(tokensToIgnore);
 
         return BinaryOp(PrimitiveOpType::EditDistanceError, prediction, labels, std::move(additionalProperties), name);
     }
@@ -1349,6 +1352,11 @@ namespace CNTK
         return Internal::ReduceElements(operand, PrimitiveFunction::InternalArgminReductionOpName, axis, name);
     }
 
+    FunctionPtr StopGradient(const Variable& operand, const std::wstring& name)
+    {
+        return UnaryOp(PrimitiveOpType::StopGradient, operand, Dictionary(), name);
+    }
+
     namespace Sequence
     {
         void VerifyIsSequence(const Variable& operand)
@@ -1449,11 +1457,24 @@ namespace CNTK
         {
             auto operandPlaceholder = PlaceholderVariable(L"operand");
             auto broadcastAsPlaceholder = PlaceholderVariable(L"broadcastAs");
+#if 1       // from master, requires latest update to ReconcileDynamicAxes(), not sure if works correctly inside a recurrent loop
             return AsBlock(Internal::ReconcileDynamicAxes(operandPlaceholder, broadcastAsPlaceholder), { { operandPlaceholder, operand },{ broadcastAsPlaceholder, broadcastAs } }, L"Sequence::BroadcastAs", name);
+#else
+            // We broadcast using a PastValue() operation that is normally outside of a loop,
+            // although it works inside the loop as well.
+            // The PastValue() uses an "infinite" delay such that every single time step reaches outside
+            // and gets the initial value, which is the value we want to broadcast.
+            // PastValue() also requires a data input, which is a dummy since it will never ever be used.
+            auto output = PastValue(Internal::ZeroesWithDynamicAxesLike(broadcastAsPlaceholder), /*initialState=*/ operandPlaceholder, /*offset=*/ INT_MAX);
+            return AsBlock(std::move(output), { { operandPlaceholder, operand },{ broadcastAsPlaceholder, broadcastAs } }, L"Sequence::BroadcastAs", name);
+#endif
         }
 
         FunctionPtr ReduceElements(const Variable& operand, const std::wstring& reductionOpName, const std::wstring& name)
         {
+            if (reductionOpName == PrimitiveFunction::InternalSumReductionOpName)
+                return Internal::ReduceElements(operand, reductionOpName, Axis::OperandSequenceAxis(), name);
+            
             using namespace std::placeholders;
 
             std::function<FunctionPtr(const Variable& leftOperand, const Variable& rightOperand)> reductionFunctor;
@@ -1512,7 +1533,7 @@ namespace CNTK
 
         FunctionPtr ZeroesWithDynamicAxesLike(const Variable& operand)
         {
-            return Internal::ReconcileDynamicAxes(Constant::Scalar(0.0f), operand);
+            return Internal::ReconcileDynamicAxes(Constant::Scalar(0.0f), operand/*acts as layout input*/);
         }
 
         FunctionPtr Where(const Variable& condition, const std::pair<size_t, int>& newDerivedSequenceAxisScalingAndAdditiveFactor, const std::wstring& name)
@@ -1555,7 +1576,13 @@ namespace CNTK
 
         FunctionPtr ReduceElements(const Variable& operand, const std::wstring& reductionOpName, const Axis& axis, const std::wstring& name)
         {
-            if (axis.IsStaticAxis() || (axis == Axis::AllStaticAxes()) || (axis == Axis::AllAxes()))
+            if (axis == Axis::DefaultBatchAxis())
+                LogicError("Reduction is currently unsupported along the batch axis only");
+
+            if (axis.IsStaticAxis() ||
+                (axis == Axis::AllStaticAxes()) ||
+                (axis == Axis::AllAxes()) ||
+                ((reductionOpName == PrimitiveFunction::InternalSumReductionOpName) && (axis == Axis::OperandSequenceAxis())))
             {
                 auto additionalProperties = Dictionary();
                 additionalProperties[PrimitiveFunction::AttributeNameAxis] = axis;
@@ -1563,15 +1590,13 @@ namespace CNTK
                 return UnaryOp(PrimitiveOpType::ReduceElements, operand, std::move(additionalProperties), name);
             }
 
-            if (axis == Axis::DefaultBatchAxis())
-                LogicError("Reduction is currently unsupported along the batch axis only");
-
             LogicError("CNTK::ReduceElements: Invalid axis argument provided. To reduce a sequence along its ordered dynamic axis use Sequence::ReduceElements.");
         }
 
-
         FunctionPtr ReconcileDynamicAxes(const Variable& operand, const Variable& axesAsOperand, const std::wstring& name)
         {
+            // TODO: In V1 graph generation, ReconcileDynamicAxis() should be treated like a no-op if the axis is known to be the same.
+            //       E.g. used for seq2seq.
             return BinaryOp(PrimitiveOpType::ReconcileDynamicAxis, operand, axesAsOperand, Dictionary(), name);
         }
    }

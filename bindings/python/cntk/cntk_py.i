@@ -27,6 +27,9 @@
 %rename(sequence_slice) CNTK::Sequence::Slice;
 %rename(sequence_reduce_sum) CNTK::Sequence::ReduceSum;
 %rename(momentum_as_time_constant_schedule) CNTK::MomentumAsTimeConstantSchedule;
+%rename(ctf_deserializer) CNTK::CTFDeserializer;
+%rename(htk_feature_deserializer) CNTK::HTKFeatureDeserializer;
+%rename(htk_mlf_deserializer) CNTK::HTKMLFDeserializer;
 
 %rename(_none) CNTK::DictionaryValue::Type::None;
 
@@ -80,6 +83,7 @@
 %ignore CNTK::TrainingParameterSchedule::operator=;
 %ignore CNTK::TrainingParameterSchedule::operator[];
 
+
 // renaming overloads for TrainMinibatch and TestMinibatch that take a map 
 // of Variables and MinibatchData as their first parameter. If this is not done, 
 // the overloads that are legal in C++ will be shadowed and ignored by SWIG.
@@ -112,19 +116,25 @@
 %template() std::vector<CNTK::Axis>;
 %template() std::vector<CNTK::DeviceDescriptor>;
 %template() std::vector<CNTK::StreamConfiguration>;
+%template() std::vector<CNTK::HTKFeatureConfiguration>;
 %template() std::vector<std::shared_ptr<CNTK::NDArrayView>>;
 %template() std::vector<std::shared_ptr<CNTK::Value>>;
 %template() std::vector<std::shared_ptr<CNTK::Function>>;
 %template() std::vector<std::shared_ptr<CNTK::Learner>>;
 %template() std::vector<std::shared_ptr<CNTK::DistributedLearner>>;
 %template() std::vector<std::shared_ptr<CNTK::Trainer>>;
+%template() std::vector<std::shared_ptr<CNTK::ProgressWriter>>;
+%template() std::pair<double, double>;
 %template() std::pair<size_t, double>;
 %template() std::pair<size_t, size_t>;
 %template() std::pair<size_t, int>;
 %template() std::vector<std::pair<size_t, double>>;
 %template() std::vector<std::pair<size_t, size_t>>;
 %template() std::vector<std::pair<CNTK::Variable, CNTK::Variable>>;
+%template() std::vector<CNTK::Dictionary>;
+%template() std::vector<std::wstring>;
 %template() std::pair<std::vector<std::shared_ptr<CNTK::NDArrayView>>, std::vector<bool>>;
+
 
 // They are defined twice under CNTK::Internal and under CNTK namespace
 %ignore CNTK::Internal::Combine;
@@ -237,7 +247,7 @@ def dynamic_axes(self):
         {
             delete cpuView;
         }
-
+		
         return ndarray;
     }
 }
@@ -474,7 +484,7 @@ fail:   return false;
                     PyObject *dvp = DictionaryValueToPy(it->second);
                     PyDict_SetItem(val, key, dvp);
                     Py_DECREF(key);
-                    Py_DECREF(val);
+                    Py_DECREF(dvp);
                 }
                 break;
             case CNTK::DictionaryValue::Type::NDArrayView:
@@ -553,12 +563,26 @@ public:
 }
 
 %extend CNTK::Dictionary {
-    CNTK::DictionaryValue __getitem__(const wchar_t* key) {
-        return (*($self))[key];
+    PyObject* __getitem__(const wchar_t* key) {
+    PyObject *DictionaryValueToPy(const CNTK::DictionaryValue&);
+        return DictionaryValueToPy((*($self))[key]);
     }
 
     void __setitem__(const wchar_t* key, CNTK::DictionaryValue value) {
         (*($self))[key] = value;
+    }
+
+    PyObject* keys()
+    {
+        PyObject* container = PyList_New(0);
+        for (auto var : (*($self)))
+        {
+            PyObject *item = PyUnicode_FromWideChar(var.first.c_str(), var.first.length());
+            // No error handling here, because the error will be passed directly to Python
+            PyList_Append(container, item);
+            Py_DECREF(item);
+        }
+        return container;
     }
 }
 
@@ -601,6 +625,12 @@ public:
 %feature("nodirector") CNTK::TrainingSession::OnMinibatchStart;
 %feature("nodirector") CNTK::TrainingSession::OnCheckpointStart;
 %feature("nodirector") CNTK::TrainingSession::GetMinibatchSize;
+
+%feature("director") CNTK::ProgressWriter;
+%ignore CNTK::ProgressWriter::UpdateTraining;
+%ignore CNTK::ProgressWriter::UpdateTest;
+%ignore CNTK::ProgressWriter::WriteTrainingSummary;
+%ignore CNTK::ProgressWriter::WriteTestSummary;
 
 //
 // NDShape
@@ -1290,7 +1320,6 @@ std::unordered_map<CNTK::StreamInformation, std::pair<CNTK::NDArrayViewPtr, CNTK
 %shared_ptr(CNTK::IDictionarySerializable)
 %shared_ptr(CNTK::Trainer)
 %shared_ptr(CNTK::TrainingSession)
-%shared_ptr(CNTK::BasicTrainingSession)
 %shared_ptr(CNTK::Function)
 %shared_ptr(CNTK::NDArrayView)
 %shared_ptr(CNTK::Value)
@@ -1302,6 +1331,7 @@ std::unordered_map<CNTK::StreamInformation, std::pair<CNTK::NDArrayViewPtr, CNTK
 %shared_ptr(CNTK::QuantizedDistributedCommunicator)
 %shared_ptr(CNTK::DistributedLearner)
 %shared_ptr(CNTK::Internal::TensorBoardFileWriter)
+%shared_ptr(CNTK::ProgressWriter)
 
 %include "CNTKLibraryInternals.h"
 %include "CNTKLibrary.h"
@@ -1310,18 +1340,21 @@ std::unordered_map<CNTK::StreamInformation, std::pair<CNTK::NDArrayViewPtr, CNTK
    // Trainer initializers.
    // Because SWIG cannot properly handle smart pointers to derived classes (causes memory leak during the check for distributed learners),
    // we need to redefine CreateTrainer.
-    CNTK::TrainerPtr TrainerImpl(const ::CNTK::FunctionPtr& model, const ::CNTK::FunctionPtr& lossFunction, const ::CNTK::FunctionPtr& evaluationFunction, const std::vector<CNTK::DistributedLearnerPtr>& parameterLearners)
+   // TODO: do progressWriters below also have a similar issue?
+    CNTK::TrainerPtr TrainerImpl(const ::CNTK::FunctionPtr& model, const ::CNTK::FunctionPtr& lossFunction, const ::CNTK::FunctionPtr& evaluationFunction,
+                                 const std::vector<CNTK::DistributedLearnerPtr>& parameterLearners, const std::vector<CNTK::ProgressWriterPtr>& progressWriters)
     {
         std::vector<LearnerPtr> learners;
         learners.reserve(parameterLearners.size());
         for(const auto& l : parameterLearners)
             learners.push_back(l);
-        return CreateTrainer(model, lossFunction, evaluationFunction, learners);
+        return CreateTrainer(model, lossFunction, evaluationFunction, learners, progressWriters);
     }
 
-    CNTK::TrainerPtr TrainerImpl(const ::CNTK::FunctionPtr& model, const ::CNTK::FunctionPtr& lossFunction, const ::CNTK::FunctionPtr& evaluationFunction, const std::vector<CNTK::LearnerPtr>& parameterLearners)
+    CNTK::TrainerPtr TrainerImpl(const ::CNTK::FunctionPtr& model, const ::CNTK::FunctionPtr& lossFunction, const ::CNTK::FunctionPtr& evaluationFunction,
+                                 const std::vector<CNTK::LearnerPtr>& parameterLearners, const std::vector<CNTK::ProgressWriterPtr>& progressWriters)
     {
-        return CreateTrainer(model, lossFunction, evaluationFunction, parameterLearners);
+        return CreateTrainer(model, lossFunction, evaluationFunction, parameterLearners, progressWriters);
     }
 
     // Global rank of current worker

@@ -2613,7 +2613,7 @@ from cntk.axis import Axis
 @typemap
 def input_variable(shape, dtype=np.float32, needs_gradient=False, is_sparse=False,
                    dynamic_axes=Axis.default_input_variable_dynamic_axes(), name=''):
-    '''
+    '''input_variable(shape, dtype=np.float32, needs_gradient=False, is_sparse=False, dynamic_axes=Axis.default_input_variable_dynamic_axes(), name='')
     It creates an input in the network: a place where data,
     such as features and labels, should be provided.
 
@@ -2778,7 +2778,6 @@ def constant(value=None, shape=None, dtype=None, device=None, name=''):
     from .variables import Constant
     if not device:
         device = use_default_device()
-    #if np.isscalar(value) and not shape:
     if (np.isscalar(value) or isinstance(value, np.ndarray)) and not shape:
         shape = ()
     if dtype is not None:
@@ -2816,3 +2815,19 @@ def per_dim_mean_variance_normalize(operand, mean, inv_stddev, name=''):
     mean = sanitize_input(mean, get_data_type(mean))
     inv_stddev = sanitize_input(inv_stddev, get_data_type(inv_stddev))
     return per_dim_mean_variance_normalize(operand, mean, inv_stddev, name)
+
+@typemap
+def stop_gradient(input, name=''):
+    '''
+    Outputs its input as it and prevents any gradient contribution from its output to its input. 
+
+    Args:
+        input: class:`~cntk.ops.functions.Function` that outputs a tensor
+        name (str, optional): the name of the Function instance in the network
+    Returns:
+        :class:`~cntk.ops.functions.Function`
+    '''
+    from cntk.cntk_py import stop_gradient
+    dtype = get_data_type(input)
+    op = sanitize_input(input, dtype)
+    return stop_gradient(op, name)

@@ -404,6 +404,7 @@ namespace CNTK
         friend class LearnerBase;
         friend class Variable;
         friend class Value;
+        friend class Accumulator;
         friend class PackedValue;
         friend class MPICommunicatorImpl;
         friend class BlockMomentumDistributedLearner;
@@ -903,6 +904,14 @@ namespace CNTK
         CNTK_API static const Axis& DefaultDynamicAxis();
 
         ///
+        /// Axis object representing the sequence axis (ordered dynamic axis) of an
+        /// operand whose dynamic axes have not yet been inferred/resolved (i.e. are unknown).
+        /// This automatically resolves to the actual sequence dynamic axis of the operand that
+        /// it is specified for, when the dynamic axes of the operand are resolved.
+        ///
+        CNTK_API static const Axis& OperandSequenceAxis();
+
+        ///
         /// Axis object representing the batch axis.
         ///
         CNTK_API static const Axis& DefaultBatchAxis();
@@ -1395,6 +1404,18 @@ namespace CNTK
 
         CNTK_API void Add(const Dictionary& other);
 
+        void Add(const std::wstring& key, const DictionaryValue& value)
+        {
+            operator[](key.c_str()) = value;
+        }
+
+        template<typename... Args>
+        void Add(const std::wstring& key, const DictionaryValue& value, Args... args)
+        {
+            Add(key, value); //insert one
+            Add(args...);    //recurse
+        }
+
         CNTK_API bool operator==(const Dictionary& other) const;
         CNTK_API bool operator!=(const Dictionary& other) const;
 
@@ -1633,6 +1654,8 @@ private:
         void SetOwner(Function* ownerFunction);
 
         Variable CompositePreservingCopy(const std::shared_ptr<const Function>& composite) const;
+
+        Variable NonCompositePreservingCopy() const;
 
     private:
 #ifdef SWIGCSHARP
@@ -2409,6 +2432,12 @@ namespace CNTK
             }
         }
 
+        ///
+        /// If the value stored is a scalar, returns it. Otherwise, throws an error.
+        ///
+        template<typename ElementType>
+        ElementType AsScalar() const;
+
     private:
         template <typename ElementType>
         static void AppendSparseSequenceData(const NDArrayViewPtr& sequenceData, std::vector<SparseIndexType>& colStarts, std::vector<SparseIndexType>& rowIndices, std::vector<char>& nonZeroValues, size_t maxSequenceLength);
@@ -2735,7 +2764,7 @@ namespace CNTK
 
         ///
         /// Returns the root of the Function graph underlying this block Function.
-        /// Throws an exception ff this is not a block Function
+        /// Throws an exception of this is not a block Function
         ///
         CNTK_API FunctionPtr BlockRoot() const;
 
@@ -3523,6 +3552,11 @@ namespace CNTK
     CNTK_API FunctionPtr AsBlock(FunctionPtr&& composite, const std::vector<std::pair<Variable, Variable>>& argumentsMap, const std::wstring& blockOpName, const std::wstring& blockName = L"");
 
     ///
+    /// Creates a new Function instance which output its input as it is and previent any gradient contribution from its output. 
+    ///
+    CNTK_API FunctionPtr StopGradient(const Variable& operand, const std::wstring& name = L"");
+
+    ///
     /// Creates a composite Function that has the specified rootFunction as its root.
     /// The composite denotes a higher-level Function encapsulating the entire graph
     /// of Functions underlying the specified rootFunction.
@@ -4150,34 +4184,24 @@ namespace CNTK
         size_t PreviousMinibatchSampleCount() const { return m_prevMinibatchNumSamples; }
 
         ///
-        /// Returns the average training loss per sample for accumulated training loss.
-        ///
-        CNTK_API double AccumulatedLossAverage() const;
-
-        ///
-        /// Returns the average evaluation criterion value per sample for accumulated eval criterion.
-        ///
-        CNTK_API double AccumulatedEvaluationAverage() const;
-
-        ///
-        /// Returns the number of samples accumulated
-        ///
-        size_t AccumulatedSampleCount() const { return m_accumulatedNumSamples; }
-
-        ///
-        /// Reset the accumulation
-        ///
-        CNTK_API void ResetAccumulation();
-
-        ///
         /// Learners associated with this Trainer for updating the model's parameters using computed gradients.
         ///
         CNTK_API const std::vector<LearnerPtr>& ParameterLearners() const;
 
         ///
-        /// Total number of samples seen from the beginnign of the training.
+        /// Total number of samples seen from the begining of the training.
         ///
         CNTK_API size_t TotalNumberOfSamplesSeen() const;
+
+        ///
+        /// Writes the summary of training progress and resets the accumulators.
+        ///
+        CNTK_API void SummarizeTrainingProgress();
+
+        ///
+        /// Writes the summary of test progress and resets the accumulators.
+        ///
+        CNTK_API void SummarizeTestProgress();
 
     private:
         template <typename T1, typename ...CtorArgTypes>
@@ -4189,8 +4213,10 @@ namespace CNTK
         // TODO: change the public interface to return pair(error, sampleCount) instead of average error.
         double TestMinibatch(const std::unordered_map<Variable, ValuePtr>& arguments, const DeviceDescriptor& computeDevice, size_t& sampleCount);
 
-        Trainer(const FunctionPtr& model, const FunctionPtr& lossFunction, const std::vector<LearnerPtr>& parameterLearners);
-        Trainer(const FunctionPtr& model, const FunctionPtr& lossFunction, const FunctionPtr& evaluationFunction, const std::vector<LearnerPtr>& parameterLearners);
+        Trainer(const FunctionPtr& model, const FunctionPtr& lossFunction, const std::vector<LearnerPtr>& parameterLearners,
+                const std::vector<ProgressWriterPtr>& progressWriters = {});
+        Trainer(const FunctionPtr& model, const FunctionPtr& lossFunction, const FunctionPtr& evaluationFunction, const std::vector<LearnerPtr>& parameterLearners,
+                const std::vector<ProgressWriterPtr>& progressWriters = {});
 
         void ExecuteForwardBackward(
             const std::unordered_map<Variable, ValuePtr>& arguments,
@@ -4203,7 +4229,9 @@ namespace CNTK
 
         void Save(const std::wstring& modelFilePath, const std::vector<DictionaryValue>& learnerState, const Dictionary& externalState);
 
-        void AccumulatePrevMinibatch(const DeviceDescriptor& computeDevice);
+        void UpdateTrainingProgress(size_t numSamples, const ValuePtr& loss, const ValuePtr& evalCriterion, const DeviceDescriptor& computeDevice);
+        void UpdateTestProgress(size_t numSamples, const ValuePtr& evalCriterion, const DeviceDescriptor& computeDevice);
+        void AddProgressWriters(const std::vector<ProgressWriterPtr>& progressWriters);
 
         FunctionPtr m_combinedTrainingFunction;
         FunctionPtr m_model;
@@ -4223,23 +4251,27 @@ namespace CNTK
         ValuePtr m_prevMinibatchAggregateTrainingLossValue;
         ValuePtr m_prevMinibatchAggregateEvalCriterionValue;
 
-        size_t   m_accumulatedNumSamples;
-        ValuePtr m_accumulatedTrainingLossValue;
-        ValuePtr m_accumulatedEvalCriterionValue;
+        AccumulatorPtr m_aggregatedTrainingLossValue;
+        AccumulatorPtr m_aggregatedTrainingEvalCriterionValue;
+        AccumulatorPtr m_aggregatedTestEvalCriterionValue;
+
+        std::unordered_set<ProgressWriterPtr> m_progressWriters;
     };
 
     ///
     /// Construct a Trainer to train the specified 'model' with the specified 'trainingLoss' Variable as the training criterion
     /// and using the specified set of 'parameterLearners' for updating the model's parameters using computed gradients.
     ///
-    CNTK_API TrainerPtr CreateTrainer(const FunctionPtr& model, const FunctionPtr& lossFunction, const std::vector<LearnerPtr>& parameterLearners);
+    CNTK_API TrainerPtr CreateTrainer(const FunctionPtr& model, const FunctionPtr& lossFunction, const std::vector<LearnerPtr>& parameterLearners,
+                                      const std::vector<ProgressWriterPtr>& progressWriters = {});
 
     ///
     /// Construct a Trainer to train the specified 'model' with the specified 'trainingLoss' as the training criterion,
     /// the specified 'evaluationFunction' as the criterion for evaluating the trained model's quality, and using the specified set
     /// of 'parameterLearners' for updating the model's parameters using computed gradients.
     ///
-    CNTK_API TrainerPtr CreateTrainer(const FunctionPtr& model, const FunctionPtr& lossFunction, const FunctionPtr& evaluationFunction, const std::vector<LearnerPtr>& parameterLearners);
+    CNTK_API TrainerPtr CreateTrainer(const FunctionPtr& model, const FunctionPtr& lossFunction, const FunctionPtr& evaluationFunction, const std::vector<LearnerPtr>& parameterLearners,
+                                      const std::vector<ProgressWriterPtr>& progressWriters = {});
 }
 
 namespace std {
@@ -4388,6 +4420,20 @@ namespace CNTK
         std::wstring m_streamAlias;
     };
 
+    struct HTKFeatureConfiguration
+    {
+        HTKFeatureConfiguration(const std::wstring& streamName, const std::wstring& scp, size_t dim, size_t left, size_t right, bool broadcast)
+            : m_streamName(streamName), m_dim(dim), m_scp(scp), m_left(left), m_right(right), m_broadcast(broadcast)
+        {}
+
+        std::wstring m_streamName;
+        std::wstring m_scp;
+        size_t m_dim;
+        size_t m_left;
+        size_t m_right;
+        bool m_broadcast;
+    };
+
     /// 
     /// Instantiate the CNTK built-in text format minibatch source
     ///
@@ -4432,6 +4478,56 @@ namespace CNTK
         minibatchSourceConfiguration[L"deserializers"] = std::vector<::CNTK::DictionaryValue>({ deserializerConfiguration });
         return CreateCompositeMinibatchSource(minibatchSourceConfiguration);
     }
+
+    typedef Dictionary ImageTransform;
+
+    /// 
+    /// Create a crop transform with the specified options to be used with a reader
+    /// 
+    CNTK_API ImageTransform ReaderCrop(const wchar_t* cropType = L"center",
+        int cropSize = 0, float sideRatio = 0.0f, float areaRatio = 0.0f,
+        float aspectRatio = 1.0f, const wchar_t* jitterType = L"none");
+
+    /// 
+    /// Create a scale transform with the specified options to be used with a reader
+    /// 
+    CNTK_API ImageTransform ReaderScale(int width,
+        int height, int channels, const wchar_t* interpolations = L"linear",
+        const wchar_t* scaleMode = L"fill", int padValue = -1);
+
+    /// 
+    /// Create a mean subtraction transform with the specified options to be used with a reader
+    /// 
+    CNTK_API ImageTransform ReaderMean(const wchar_t* meanFile);
+
+    /// 
+    /// Create a color transform with the specified options to be used with a reader
+    /// 
+    CNTK_API ImageTransform ReaderColor(float brightnessRadius = 0.0f,
+        float contrastRadius = 0.0f, float saturationRadius = 0.0f);
+
+
+    typedef Dictionary Deserializer;
+
+    /// 
+    /// Create an ImageDeserializer with the specified options
+    /// 
+    CNTK_API  Deserializer ImageDeserializer(const std::wstring& fileName, const std::wstring& labelStreamName, size_t numLabels, const std::wstring& imageStreamName, const std::vector<ImageTransform>& transforms = {});
+
+    /// 
+    /// Create an CTFDeserializer with the specified options
+    /// 
+    CNTK_API  Deserializer CTFDeserializer(const std::wstring& fileName, const std::vector<StreamConfiguration>& streams);
+
+    /// 
+    /// Create an HTKFeatureDeserializer with the specified options
+    /// 
+    CNTK_API  Deserializer HTKFeatureDeserializer(const std::vector<HTKFeatureConfiguration>& streams);
+
+    /// 
+    /// Create an HTKMLFDeserializer with the specified options
+    /// 
+    CNTK_API  Deserializer HTKMLFDeserializer(const std::wstring& streamName, const std::wstring& labelMappingFile, size_t dimension, const std::vector<std::wstring>& mlfFiles);
 
     ///
     /// Compute the per dimension means and variances for each of the specified streams using data from the specified minibatchSource.
@@ -4605,7 +4701,8 @@ namespace CNTK
             bool restoreFromCheckpointIfExists = true,
             bool keepExistingCheckpoints = false,
             size_t maxNumberOfTrainingSamples = std::numeric_limits<size_t>::max(),
-            size_t progressFrequency = std::numeric_limits<size_t>::max());
+            size_t progressFrequency = std::numeric_limits<size_t>::max(),
+            const std::vector<ProgressWriterPtr>& progressWriters = {});
 
         ///
         /// Runs the session.
@@ -4658,11 +4755,6 @@ namespace CNTK
         /// Optionally overridable callback that is invoked after each cross validation.
         ///
         CNTK_API virtual void OnCrossValidationEnd(size_t /*validationIndex*/, double /*averageError*/, size_t /*numberOfSamples*/, size_t /*numberOfMinibatches*/) {};
-
-        ///
-        /// Optionally overridable callback that is invoked with progress frequency.
-        ///
-        CNTK_API virtual void OnProgress(size_t /*index*/) {};
 
     protected:
         ///
@@ -4726,10 +4818,107 @@ namespace CNTK
         bool restoreFromCheckpointIfExists = true,
         bool keepExistingCheckpoints = false,
         size_t maxNumberOfTrainingSamples = std::numeric_limits<size_t>::max(),
-        size_t progressFrequency = std::numeric_limits<size_t>::max());
-
+        size_t progressFrequency = std::numeric_limits<size_t>::max(),
+        const std::vector<ProgressWriterPtr>& progressWriters = {});
 
     CNTK_API void PrintBuiltInfo();
+
+    ///
+    /// Base class for all classes that want to record training/evaluation progress.
+    ///
+    class ProgressWriter
+    {
+    public:
+        ///
+        /// Constructor.
+        ///
+        /// The frequency arguments control a schedule on which the training/evaluation progress updates are written.
+        /// The frequency value of 0 specifies geometric schedule, i.e. write progress after 1, 2, 4, 8, 16... updates.
+        /// The frequency value other than zero specifies arithmetic schedule, i.e. write progress after each 
+        /// 'frequency' updates.
+        ///
+        /// The firstUpdatesToWrite arguments only apply on arithemetic schedule. If specified, the first
+        /// 'firstUpdatesToWrite' updates will be written explicitly before using an arithmetic schedule.
+        ///
+        CNTK_API ProgressWriter(size_t trainingUpdateWriteFrequency, size_t trainingFirstUpdatesToWrite,
+                                size_t testUpdateWriteFrequency, size_t testFirstUpdatesToWrite);
+
+        ///
+        /// Destructor.
+        ///
+        CNTK_API virtual ~ProgressWriter();
+
+        ///
+        /// Actually outputs information about the update in training progress. Overridable in derived classes.
+        ///
+        CNTK_API virtual void OnWriteTrainingUpdate(const std::pair<size_t, size_t>& /*samples*/,
+                                                    const std::pair<size_t, size_t>& /*updates*/,
+                                                    const std::pair<double, double>& /*aggregateLoss*/,
+                                                    const std::pair<double, double>& /*aggregateMetric*/) {};
+
+        ///
+        /// Actually outputs information about the update in evaluation progress.  Overridable in derived classes.
+        ///
+        CNTK_API virtual void OnWriteTestUpdate(const std::pair<size_t, size_t>& /*samples*/,
+                                                const std::pair<size_t, size_t>& /*updates*/,
+                                                const std::pair<double, double>& /*aggregateMetric*/) {};
+
+        ///
+        /// Called after each training update, regardless whether the actual write is needed.
+        ///
+        CNTK_API virtual void OnTrainingUpdateEnd() {};
+
+        ///
+        /// Actually outputs information about the summary of training progress.  Overridable in derived classes.
+        ///
+        CNTK_API virtual void OnWriteTrainingSummary(size_t /*samples*/, size_t /*updates*/, size_t /*summaries*/,
+                                                     double /*aggregateLoss*/, double /*aggregateMetric*/,
+                                                     size_t /*elapsedMilliseconds*/) {};
+
+        ///
+        /// Actually outputs information about the summary of evaluation progress.  Overridable in derived classes.
+        ///
+        CNTK_API virtual void OnWriteTestSummary(size_t /*samples*/, size_t /*updates*/, size_t /*summaries*/,
+                                                 double /*aggregateMetric*/, size_t /*elapsedMilliseconds*/) {};
+
+        ///
+        /// Returns the total number of training progress updates received by the progress writer.
+        ///
+        CNTK_API size_t TotalTrainingUpdates() const;
+
+        ///
+        /// Returns the total number of evaluation progress updates received by the progress writer.
+        ///
+        CNTK_API size_t TotalTestUpdates() const;
+
+        /// 
+        /// Updates the writer with the accumulated loss/metric since the start of training.
+        ///
+        void UpdateTraining(size_t numSamples, const ValuePtr& accumulatedLoss, const ValuePtr& accumulatedMetric);
+
+        ///
+        /// Updates the writer with the accumulated metric since the start of evaluation.
+        ///
+        void UpdateTest(size_t numSamples, const ValuePtr& accumulatedMetric);
+
+        ///
+        /// Writes a summary of training progress since the last call to this function.
+        ///
+        void WriteTrainingSummary(const ValuePtr& accumulatedLoss, const ValuePtr& accumulatedMetric);
+
+        ///
+        /// Writes a summary of evaluation progress since the last call to this function.
+        ///
+        void WriteTestSummary(const ValuePtr& accumulatedMetric);
+
+    private:
+        // Disallow copy and move construction and assignment
+        ProgressWriter(const ProgressWriter&) = delete; ProgressWriter(ProgressWriter&&) = delete; ProgressWriter& operator=(const ProgressWriter&) = delete; ProgressWriter& operator=(ProgressWriter&&) = delete;
+
+        class Impl;
+        std::unique_ptr<Impl> m_training;
+        std::unique_ptr<Impl> m_test;
+    };
 }
 
 
