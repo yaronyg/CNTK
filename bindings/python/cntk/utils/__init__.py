@@ -391,7 +391,7 @@ def sanitize_var_map(op_arguments, arguments, precision=None,
         return {}
 
     if len(arguments) < len(op_arguments):
-        raise ValueError('your graph has %i inputs, but you specified %i' %
+        raise ValueError('your graph has %i input(s), but you specified %i' %
                         (len(op_arguments), len(arguments)))
 
     if isinstance(arguments, dict):

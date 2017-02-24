@@ -62,8 +62,8 @@ class NDArrayView(cntk_py.NDArrayView):
 
         if not _is_c_contiguous(np_array):
             warnings.warn('data is not C contiguous; rearrange your '
-                    'data/computation to avoid costly data conversions',
-                    RuntimeWarning)
+                          'data/computation to avoid costly data conversions',
+                          RuntimeWarning)
             np_array = np.ascontiguousarray(np_array)
 
         if device is None:
@@ -212,10 +212,10 @@ class Value(cntk_py.Value):
                              'supported, you gave %s' % sample.dtype)
 
         if convert_to_var_dtype:
-            warnings.warn('your data is of type "%s", but your input'
-                          'expects "%s". Please convert your data '
-                          'beforehand to speed up training.' %
-                          (sample.dtype, str(var.dtype)))
+            warnings.warn('your data is of type "%s", but your input '
+                          'variable (uid "%s") expects "%s". Please convert '
+                          'your data beforehand to speed up training.' %
+                          (sample.dtype, var.uid, str(var.dtype)))
             sample = sample.astype(var.dtype)
 
         return sample
@@ -250,12 +250,23 @@ class Value(cntk_py.Value):
             raise TypeError('Variable expected, but got "%s"'%type(var))
 
         cpu_dev = cpu()
-        if len(var.dynamic_axes) <= 1:
+
+        if not var.dynamic_axes:
             # No dynamic axes -> no batch
             data = Value._as_best_data_type(var, data)
-            ndav = NDArrayView.from_data(data, copy=False)
+            # If we pass a single NDArrayView to Value, it is not copied, so we
+            # need to do it before.
+            ndav = NDArrayView.from_data(data, copy=True)
 
             return cntk_py.Value(ndav)
+
+        elif len(var.dynamic_axes) <= 1 and isinstance(data, list):
+            warnings.warn('you provided the minibatch data as a list, but '
+                          'your corresponding input variable (uid "%s") has '
+                          'only one dynamic axis (batch axis). To speed up '
+                          'graph executen, please convert the data '
+                          'beforehand into one NumPy array to speed up '
+                          ' training.' % var.uid)
 
         if isinstance(data, np.ndarray):
             # The outermost axis has to be Python list. If the user passes a
@@ -272,22 +283,26 @@ class Value(cntk_py.Value):
             raise ValueError('batch has to be a list of NumPy arrays or '
                     'SciPy CSR matrices')
 
-        list_of_ndavs = []
-
         # NDArrayViews are all created on CPU. The Value object later then will
         # move it to the requested device.
-        for sample in data:
-            sample = Value._as_best_data_type(var, sample)
-            ndav = NDArrayView.from_data(sample, copy=False)
-
-            list_of_ndavs.append(ndav)
+        # As Value will later create copies anyways, we do not create copies in
+        # NDArrayView itself. Because of that, we need to keep around the
+        # instances _as_best_data_type() until we have passed them to
+        # Value_create() where it will be copied further.
+        data = [Value._as_best_data_type(var, sample) for sample in data]
+        list_of_ndavs = [NDArrayView.from_data(sample, copy=False) for sample
+                in data]
 
         from .utils import sanitize_shape
-        return cntk_py.Value_create(
-                sanitize_shape(var.shape), list_of_ndavs,
+        value = cntk_py.Value_create(
+                sanitize_shape(var.shape),
+                list_of_ndavs,
                 seq_starts or [],
                 device or use_default_device(),
-                read_only)
+                read_only,
+                True) # always create a copy in Value
+
+        return value
 
 
     @property
