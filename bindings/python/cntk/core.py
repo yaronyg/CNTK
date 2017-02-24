@@ -253,7 +253,6 @@ class Value(cntk_py.Value):
         if len(var.dynamic_axes) <= 1:
             # No dynamic axes -> no batch
             data = Value._as_best_data_type(var, data)
-            # TODO check dense
             ndav = NDArrayView.from_data(data, copy=False)
 
             return cntk_py.Value(ndav)

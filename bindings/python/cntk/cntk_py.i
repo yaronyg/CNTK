@@ -1369,6 +1369,48 @@ std::unordered_map<CNTK::StreamInformation, std::pair<CNTK::NDArrayViewPtr, CNTK
         return CNTK::MPICommunicator()->Workers().size();
     }
 
+    NDArrayView* NDArrayView_wrap(PyObject* pyobj, bool readOnly)
+    {
+        if (!PyArray_Check((PyArrayObject*)pyobj))
+        {
+            // Note that in contrast to numpy.i's implementation we demand NumPy arrays
+            // and do not accept arbitrary sequences, which would needed to be copied around.
+            throw std::logic_error("NumPy array expected");
+        }
+
+        PyArrayObject* array = (PyArrayObject*)pyobj;
+
+        int rank = PyArray_NDIM(array); 
+        
+        npy_intp* np_shape = PyArray_SHAPE(array); 
+        std::vector<size_t> shape(rank);
+
+        npy_intp num_elements = 1;
+        // CNTK uses column major, thus we reverse the shape
+        for (int i=0; i<rank; i++)
+        {
+            shape[rank-i-1] = np_shape[i];
+            num_elements *= np_shape[i];
+        }
+
+        int typecode = PyArray_TYPE(array);
+
+        NDArrayView* view;
+        if (typecode == NPY_FLOAT)
+        {
+             view = new NDArrayView(NDShape(shape), (float*)PyArray_DATA(array), num_elements, DeviceDescriptor::CPUDevice(), readOnly);
+        }
+        else if (typecode == NPY_DOUBLE)
+        {
+             view = new NDArrayView(NDShape(shape), (double*)PyArray_DATA(array), num_elements, DeviceDescriptor::CPUDevice(), readOnly);
+        }
+        else
+        {
+            throw std::logic_error("NumPy array of type float32 or float64 expected");
+        }
+
+        return view;
+    }
 %}
 
 
