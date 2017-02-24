@@ -8,7 +8,7 @@ import numpy as np
 from scipy import sparse
 
 from . import cntk_py
-from .device import use_default_device, cpu
+from .device import use_default_device, cpu, DeviceKind
 from .utils.swig_helper import typemap
 
 def _is_c_contiguous(data):
@@ -249,13 +249,11 @@ class Value(cntk_py.Value):
         if not isinstance(var, cntk_py.Variable):
             raise TypeError('Variable expected, but got "%s"'%type(var))
 
-        cpu_dev = cpu()
-
         if not var.dynamic_axes:
-            # No dynamic axes -> no batch
+            # No dynamic axes -> we can pass everything in one go
             data = Value._as_best_data_type(var, data)
-            # If we pass a single NDArrayView to Value, it is not copied, so we
-            # need to do it before.
+            # Since the core API's Value does not copy single NDArrayViews,
+            # we need to do it here.
             ndav = NDArrayView.from_data(data, copy=True)
 
             return cntk_py.Value(ndav)
@@ -290,8 +288,9 @@ class Value(cntk_py.Value):
         # instances _as_best_data_type() until we have passed them to
         # Value_create() where it will be copied further.
         data = [Value._as_best_data_type(var, sample) for sample in data]
-        list_of_ndavs = [NDArrayView.from_data(sample, copy=False) for sample
-                in data]
+        copy = device.type() != DeviceKind.CPU
+        list_of_ndavs = [NDArrayView.from_data(sample, copy=copy) \
+                for sample in data]
 
         from .utils import sanitize_shape
         value = cntk_py.Value_create(

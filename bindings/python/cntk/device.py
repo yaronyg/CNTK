@@ -4,6 +4,7 @@
 # for full license information.
 # ==============================================================================
 
+from enum import Enum, unique
 from . import cntk_py
 
 @unique
