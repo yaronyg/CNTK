@@ -6,6 +6,16 @@
 
 from . import cntk_py
 
+@unique
+class DeviceKind(Enum):
+    '''
+    Describes different device kinds like CPU or GPU.
+    '''
+
+    CPU = cntk_py.DeviceKind_CPU
+    GPU = cntk_py.DeviceKind_GPU
+
+
 class DeviceDescriptor(cntk_py.DeviceDescriptor):
     '''
     Describes a device by an unique id and its type. If the device corresponds to a GPU its type is 1,
