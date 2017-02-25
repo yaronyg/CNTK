@@ -7,6 +7,7 @@
 from enum import Enum, unique
 from . import cntk_py
 
+
 @unique
 class DeviceKind(Enum):
     '''
@@ -41,6 +42,7 @@ class DeviceDescriptor(cntk_py.DeviceDescriptor):
         '''
         return super(DeviceDescriptor, self).type()
 
+
 def all_devices():
     '''
     Returns a device descriptor list with all the available devices
@@ -49,6 +51,7 @@ def all_devices():
         :class:`~cntk.device.DeviceDescriptor` list: all device descriptors
     '''
     return cntk_py.DeviceDescriptor.all_devices()
+
 
 def best():
     '''
@@ -59,6 +62,7 @@ def best():
     '''
     return cntk_py.DeviceDescriptor.best_device()
 
+
 def cpu():
     '''
     Returns CPU device descriptor
@@ -67,6 +71,7 @@ def cpu():
         :class:`~cntk.device.DeviceDescriptor`: CPU device descriptor
     '''
     return cntk_py.DeviceDescriptor.cpu_device()
+
 
 def default():
     '''
@@ -77,6 +82,7 @@ def default():
     '''
     return cntk_py.DeviceDescriptor.default_device()
 
+
 def gpu(device_id):
     '''
     Returns GPU device
@@ -86,6 +92,7 @@ def gpu(device_id):
     '''
     return cntk_py.DeviceDescriptor.gpu_device(device_id)
 
+
 def use_default_device():
     '''
     Use default device
@@ -94,6 +101,7 @@ def use_default_device():
         `int`: Id of default device
     '''
     return cntk_py.DeviceDescriptor.use_default_device()
+
 
 def set_default_device(new_default_device):
     '''

@@ -11,23 +11,26 @@ from . import cntk_py
 from .device import use_default_device, cpu, DeviceKind
 from .utils.swig_helper import typemap
 
+
 def _is_c_contiguous(data):
     while isinstance(data, list):
         data = data[0]
 
     return data.flags.c_contiguous
 
+
 class NDArrayView(cntk_py.NDArrayView):
     '''
-    Creates an empty dense internal data representation of a :class:`~cntk.core.Value` object.
+    Creates an empty dense internal data representation of a
+    :class:`~cntk.core.Value` object.
     To create an NDArrayView from a NumPy array, use :meth:`from_dense`.
     To create an NDArrayView from a sparse array, use :meth:`from_csr`.
 
     Args:
         shape (tuple): shape of the data
         data_type (np.float32, np.float64): data type of the data
-        device (:class:`~cntk.device.DeviceDescriptor`): device this value should be put
-         on
+        device (:class:`~cntk.device.DeviceDescriptor`): device this value
+         should be put on
     '''
 
     def __init__(self, shape, data_type, device=None):
@@ -37,7 +40,7 @@ class NDArrayView(cntk_py.NDArrayView):
         if device is None:
             device = use_default_device()
         super(NDArrayView, self).__init__(data_type, cntk_py.StorageFormat_Dense, shape,
-                device)
+                                          device)
 
     @staticmethod
     @typemap
@@ -51,14 +54,15 @@ class NDArrayView(cntk_py.NDArrayView):
              should be put on
             borrow (bool, default False): whether nd_arrary memory can be
              borrowed internally to speed up the data creation
-            read_only (bool, optional): whether the data can be modified or not (default False)
+            read_only (bool, optional): whether the data can be modified or
+             not (default False)
 
         Returns:
             :class:`NDArrayView` instance
         '''
         if not isinstance(np_array, np.ndarray):
             raise TypeError('data must be of type numpy.ndarray'
-                    ' and not %s'%type(np_array))
+                            ' and not %s' % type(np_array))
 
         if not _is_c_contiguous(np_array):
             warnings.warn('data is not C contiguous; rearrange your '
@@ -81,9 +85,10 @@ class NDArrayView(cntk_py.NDArrayView):
         Args:
             csr_array (scipy.sparse.csr.csr_matrix): SciPy sparse matrix in CSR
              format
-            device (:class:`~cntk.device.DeviceDescriptor`): device this value should be put
-             on
-            read_only (bool, optional): whether the data can be modified or not (default False)
+            device (:class:`~cntk.device.DeviceDescriptor`): device this value
+             should be put on
+            read_only (bool, optional): whether the data can be modified or
+             not (default False)
             borrow (bool, default False): whether nd_arrary memory can be
              borrowed internally to speed up the data creation
 
@@ -105,14 +110,14 @@ class NDArrayView(cntk_py.NDArrayView):
     @typemap
     def from_data(data, device=None, read_only=False, borrow=False):
         '''
-        Create a :class:`NDArrayView` instance from a NumPy or SciPy sparse 
+        Create a :class:`NDArrayView` instance from a NumPy or SciPy sparse
         array in CSR format.
 
         Args:
             data (numpy.ndarray or scipy.sparse.csr.csr_matrix): data
             device (:class:`~cntk.device.DeviceDescriptor`): device this value
              should be put on
-            read_only (bool, optional): whether the data can be modified or 
+            read_only (bool, optional): whether the data can be modified or
              not (default False)
             borrow (bool, default False): whether nd_arrary memory can be
              borrowed internally to speed up the data creation
@@ -137,6 +142,7 @@ class NDArrayView(cntk_py.NDArrayView):
 
         return ndav
 
+
 class Value(cntk_py.Value):
     '''
     Internal representation of minibatch data.
@@ -156,9 +162,10 @@ class Value(cntk_py.Value):
          Booleans that tell whether a sequence is a new sequence (`True`) or a
          continuation of the sequence in the same slot of the previous
          minibatch (`False`)
-        device (:class:`~cntk.device.DeviceDescriptor`): device this value should be put
-         on
+        device (:class:`~cntk.device.DeviceDescriptor`): device this value
+         should be put on
     '''
+
     def __init__(self, shape=None, dtype=None, batch=None, seq_starts=None, device=None):
         if device is None:
             device = use_default_device()
@@ -187,12 +194,13 @@ class Value(cntk_py.Value):
                 sample = np.asarray(sample, dtype=var.dtype)
             except ValueError:
                 s = sample
-                while isinstance(s, list) and len(s)>0:
+                while isinstance(s, list) and len(s) > 0:
                     s = s[0]
                 if sparse.issparse(s):
                     raise ValueError('if you provide sparse data, every '
-                            'sequence has to be encoded as one '
-                            'csr_matrix instance. Your sequence was: \'%s\''%str(sample))
+                                     'sequence has to be encoded as one '
+                                     'csr_matrix instance. Your sequence '
+                                     'was: \'%s\'' % str(sample))
                 else:
                     raise
 
@@ -270,9 +278,9 @@ class Value(cntk_py.Value):
             # The outermost axis has to be Python list. If the user passes a
             # full minibatch as one NumPy array, we have to convert it.
             if data.dtype == object:
-                raise ValueError('dtype object is not supported. If this is a batch '
-                                 'of sequences, you need to pass them as a pure-Python list '
-                                 'of NumPy arrays')
+                raise ValueError('dtype object is not supported. If this is a '
+                                 'batch of sequences, you need to pass them as a '
+                                 'pure-Python list of NumPy arrays')
 
             # FIXME if not seq_starts: directly pass it to Value constructor
             data = list(np.atleast_1d(data))
@@ -295,15 +303,14 @@ class Value(cntk_py.Value):
 
         from .utils import sanitize_shape
         value = cntk_py.Value_create(
-                sanitize_shape(var.shape),
-                list_of_ndavs,
-                seq_starts or [],
-                device or use_default_device(),
-                read_only,
-                True) # always create a copy in Value
+            sanitize_shape(var.shape),
+            list_of_ndavs,
+            seq_starts or [],
+            device or use_default_device(),
+            read_only,
+            True)  # always create a copy in Value
 
         return value
-
 
     @property
     def shape(self):
@@ -333,12 +340,12 @@ class Value(cntk_py.Value):
         '''
         return np.asarray(super(Value, self).mask())
 
-
     def __len__(self):
         '''
         Number of samples in this value object.
         '''
         return self.shape[0]
+
 
 def user_function(user_func):
     '''
