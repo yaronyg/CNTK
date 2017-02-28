@@ -1472,6 +1472,31 @@ def param_relu(alpha, x, name=''):
     return pre_lu(alpha, x, name)
 
 @typemap
+def softplus(x, name=''):
+    '''
+    Softplus operation. Computes the element-wise softplus of ``x``:
+
+    :math:`\textrm{softplus}(x) = {\log(1+\exp(x))}`
+
+    The output tensor has the same shape as ``x``.
+
+    Example:
+        >>> C.softplus([[-1, -0.5, 0, 1, 2]]).eval()
+        array([[ 0.313262,  0.474077,  0.693147,  1.313262,  2.126928]], dtype=float32)
+
+    Args:
+        x (`numpy.array` or :class:`~cntk.ops.functions.Function`): any :class:`~cntk.ops.functions.Function` that outputs a tensor.
+        name (`str`, default to ''): the name of the Function instance in the network
+
+    Returns:
+        cntk.ops.functions.Function:
+        An instance of :class:`~cntk.ops.functions.Function`
+    '''
+    from cntk.cntk_py import softplus
+    x = sanitize_input(x)
+    return softplus(x, name)
+
+@typemap
 def sigmoid(x, name=''):
     '''
     Computes the element-wise sigmoid of ``x``:
@@ -2015,7 +2040,7 @@ def reshape(x, shape, begin_axis=None, end_axis=None, name=''):
         begin_axis = Axis(0)
 
     if end_axis is None:
-        end_axis = Axis.end_static_axis()
+        end_axis = Axis.new_leading_axis()
 
     # Pass begin_axis as the end_axis and vice versa to account for
     # the automatic shape reversal across the python SWIG boundary
@@ -2026,10 +2051,10 @@ def reshape(x, shape, begin_axis=None, end_axis=None, name=''):
         if not axis.is_static_axis:
             return axis
 
-        if (axis ==  Axis.end_static_axis()):
+        if (axis ==  Axis.new_leading_axis()):
             return Axis(0)
         elif (axis == Axis(0)):
-            return Axis.end_static_axis()
+            return Axis.new_leading_axis()
         else:
             return Axis(-axis.static_axis_index())
 
