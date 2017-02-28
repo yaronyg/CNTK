@@ -400,7 +400,7 @@ Test module "V2LibraryTests" has passed with:
       1 assertion out of 1 passed
 
     Test case "FeedForwardSuite/ReduceableTransposeTimesInCPU" has passed
-    
+
     Test case "FeedForwardSuite/TimesReduceSequenceAxis" has passed
 
     Test case "FeedForwardSuite/FFTimesAndPlusInGPU" has passed with:
