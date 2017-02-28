@@ -365,6 +365,9 @@ private:
         size_t m = InputRef(0).GetSampleLayout()[0];
         size_t k = InputRef(1).GetSampleLayout()[0];
 
+        if (InputRef(1).Value().GetMatrixType() == SPARSE)
+            LogicError("Right operand cannot be sparse in times reduce sequence axis");
+
         GetMBLayout()->InitAsFrameMode(numSequences);
         UpdateFunctionValuesSize();
 
@@ -404,6 +407,7 @@ private:
         size_t k = InputRef(1).GetSampleLayout()[0];
 
         TensorView<ElemType> unpackedInput[NumInputs];
+        bool unpacked[NumInputs];
         for (int i = 0; i < NumInputs; i++)
         {
             auto layout = InputRef(i).GetMBLayout();
@@ -412,11 +416,11 @@ private:
             size_t rank = unpackedShape.GetRank();
             unpackedShape = unpackedShape.AppendInPlace(rank++, maxNumTimeSteps);
             unpackedShape = unpackedShape.AppendInPlace(rank++, numSequences);
-
+            unpacked[i] = (maxNumTimeSteps > 1 && numSequences > 1);
             auto matValue =
-                (maxNumTimeSteps == 1 || numSequences == 1) ?
-                InputRef(i).ValuePtr() :
-                m_tempUnpackedValue[i];
+                unpacked[i] ?
+                m_tempUnpackedValue[i] :
+                InputRef(i).ValuePtr();
 
             unpackedInput[i] = TensorView<ElemType>(matValue, unpackedShape);
         }
@@ -428,7 +432,9 @@ private:
         // note the unpacked input is not the normal MBLayout (batchMajor), so do ColumnSlice directly
         if (inputIndex == 0)
         {
-            Matrix<ElemType> inputGradientUnpacked(m * k, maxNumTimeSteps * numSequences, InputRef(inputIndex).GetDeviceId());
+            Matrix<ElemType> tempGradientUnpacked(m * k, maxNumTimeSteps * numSequences, InputRef(inputIndex).GetDeviceId());
+            Matrix<ElemType>& inputGradientUnpacked = unpacked[inputIndex] ? tempGradientUnpacked : InputRef(inputIndex).Gradient();
+
             for (int s = 0; s < numSequences; s++)
             {
                 Matrix<ElemType> inputGradientSlice = inputGradientUnpacked.ColumnSlice(s * maxNumTimeSteps, maxNumTimeSteps); // (m * k) x s*
@@ -436,13 +442,17 @@ private:
                 Matrix<ElemType> inputValueSlice = unpackedInputValue.ColumnSlice(s * maxNumTimeSteps, maxNumTimeSteps); // k x s*
                 inputValueSlice.Reshape(k * maxNumTimeSteps, 1); // (k * s*) x 1
                 Matrix<ElemType> gradientSlice = Gradient().ColumnSlice(s, 1); // m x 1
-                Matrix<ElemType>::MultiplyAndWeightedAdd(1, gradientSlice, false, inputValueSlice, true, 0, inputGradientSlice);
+                Matrix<ElemType>::MultiplyAndWeightedAdd(1, gradientSlice, false, inputValueSlice, true, unpacked[inputIndex] ? (ElemType)0 : (ElemType)1, inputGradientSlice);
             }
-            InputRef(inputIndex).Gradient().DoGatherColumnsOf(beta, *m_tempScatterIndices[inputIndex], inputGradientUnpacked, 1);
+
+            if (unpacked[inputIndex])
+                InputRef(inputIndex).Gradient().DoGatherColumnsOf(beta, *m_tempScatterIndices[inputIndex], inputGradientUnpacked, (ElemType)1);
         }
         else
         {
-            Matrix<ElemType> inputGradientUnpacked(k, maxNumTimeSteps * numSequences, InputRef(inputIndex).GetDeviceId());
+            Matrix<ElemType> tempGradientUnpacked(k, maxNumTimeSteps * numSequences, InputRef(inputIndex).GetDeviceId());
+            Matrix<ElemType>& inputGradientUnpacked = unpacked[inputIndex] ? tempGradientUnpacked : InputRef(inputIndex).Gradient();
+
             for (int s = 0; s < numSequences; s++)
             {
                 Matrix<ElemType> inputGradientSlice = inputGradientUnpacked.ColumnSlice(s * maxNumTimeSteps, maxNumTimeSteps); // k x s*
@@ -450,9 +460,11 @@ private:
                 Matrix<ElemType> inputValueSlice = unpackedInputValue.ColumnSlice(s * maxNumTimeSteps, maxNumTimeSteps); // (m * k) x s*
                 inputValueSlice.Reshape(m, k * maxNumTimeSteps); // m x (k * s*)
                 Matrix<ElemType> gradientSlice = Gradient().ColumnSlice(s, 1); // m x 1
-                Matrix<ElemType>::MultiplyAndWeightedAdd(1, inputValueSlice, true, gradientSlice, false, 0, inputGradientSlice);
+                Matrix<ElemType>::MultiplyAndWeightedAdd(1, inputValueSlice, true, gradientSlice, false, unpacked[inputIndex] ? (ElemType)0 : (ElemType)1, inputGradientSlice);
             }
-            InputRef(inputIndex).Gradient().DoGatherColumnsOf(beta, *m_tempScatterIndices[inputIndex], inputGradientUnpacked, 1);
+            
+            if (unpacked[inputIndex])
+                InputRef(inputIndex).Gradient().DoGatherColumnsOf(beta, *m_tempScatterIndices[inputIndex], inputGradientUnpacked, (ElemType)1);
         }
     }
 
@@ -807,8 +819,11 @@ public:
             for(int i = 0; i < NumInputs; i++)
             {
                 RequestMatrixFromPool(m_tempScatterIndices[i], matrixPool, InputRef(i).GetMBLayout()->GetNumCols(), true);
-                if (InputRef(i).Value().GetMatrixType() == DENSE)
+                const auto& packedData = InputRef(i).Value();
+                if (packedData.GetMatrixType() == DENSE)
                     RequestMatrixFromPool(m_tempUnpackedValue[i], matrixPool, InputRef(i).GetSampleLayout().GetNumElements(), true);
+                else
+                    m_tempUnpackedValue[i] = std::make_shared<Matrix<ElemType>>(packedData.GetNumRows(), packedData.GetNumCols(), packedData.GetDeviceId(), packedData.GetMatrixType(), packedData.GetFormat());
             }
         }
     }
@@ -824,6 +839,8 @@ public:
                 ReleaseMatrixToPool(m_tempScatterIndices[i], matrixPool);
                 if (InputRef(i).Value().GetMatrixType() == DENSE)
                     ReleaseMatrixToPool(m_tempUnpackedValue[i], matrixPool);
+                else
+                    m_tempUnpackedValue[i].reset();
             }
         }
     }

@@ -328,6 +328,8 @@ template <typename ElementType>
 void TestTimesReduceSequenceAxis(
     size_t inputDimM,
     size_t inputDimK,
+    bool isLeftSparse,
+    bool isRightSparse,
     const std::vector<size_t>& sequencesLength,
     const DeviceDescriptor& device,
     unsigned int seed = 1)
@@ -343,8 +345,10 @@ void TestTimesReduceSequenceAxis(
 
     Variable inputVar[NumInputs] = 
     {
-        InputVariable({ inputDimM, inputDimK }, AsDataType<ElementType>(), /*needsGradient*/ true, L"inputLeft"),
-        InputVariable({ inputDimK },            AsDataType<ElementType>(), /*needsGradient*/ true, L"inputRight")
+        inputDimK > 1 ?
+            InputVariable({ inputDimM, inputDimK }, isLeftSparse, AsDataType<ElementType>(), /*needsGradient*/ !isLeftSparse, L"inputLeft") :
+            InputVariable({ inputDimM }, isLeftSparse, AsDataType<ElementType>(), /*needsGradient*/ !isLeftSparse, L"inputLeft"),
+        InputVariable({ inputDimK }, isRightSparse, AsDataType<ElementType>(), /*needsGradient*/ !isRightSparse, L"inputRight")
     };
 
     FunctionPtr funcs[FuncType::TotalTypes]=
@@ -360,17 +364,15 @@ void TestTimesReduceSequenceAxis(
     }
     size_t numSequences = sequencesLength.size();
 
-    std::vector<std::vector<ElementType>> inputData[NumInputs];
-
     ValuePtr inputValue[NumInputs];
     NDShape  inputShape[NumInputs];
+    bool     inputSparse[NumInputs] = {isLeftSparse, isRightSparse};
     srand(seed);
     for(int inputIndex = 0; inputIndex < NumInputs; ++inputIndex)
     {
-        inputData[inputIndex] = GenerateSequences<ElementType>(sequencesLength, inputVar[inputIndex].Shape());
-
-        inputShape[inputIndex] = inputVar[inputIndex].Shape().AppendShape({maxTimestepsPerSequence, numSequences});
-        inputValue[inputIndex] = Value::Create(inputVar[inputIndex].Shape(), inputData[inputIndex], DeviceDescriptor::CPUDevice(), true);
+        auto inputVarShape = inputVar[inputIndex].Shape();
+        inputShape[inputIndex] = inputVarShape.AppendShape({maxTimestepsPerSequence, numSequences});
+        inputValue[inputIndex] = GenerateSequences<ElementType>(sequencesLength, inputVarShape, DeviceDescriptor::CPUDevice(), inputSparse[inputIndex]);
     }
 
     std::unordered_map<Variable, ValuePtr> inputMap = { { inputVar[0], inputValue[0] },{ inputVar[1], inputValue[1] } };
@@ -421,7 +423,7 @@ void TestTimesReduceSequenceAxis(
             {
                 inputGradientValue[f][inputIndex] = MakeSharedObject<Value>(
                     MakeSharedObject<NDArrayView>(inputShape[inputIndex], inputGradientData[f][inputIndex].data(), inputGradientData[f][inputIndex].size(), device),
-                    inputValue[inputIndex]->Mask() ? inputValue[inputIndex]->Mask()->DeepClone() : nullptr);
+                    inputValue[inputIndex]->Mask());
             }
             else
             {
@@ -430,10 +432,12 @@ void TestTimesReduceSequenceAxis(
                 gpuArrayView->CopyFrom(*cpuArrayView);
                 inputGradientValue[f][inputIndex] = MakeSharedObject<Value>(
                     gpuArrayView,
-                    inputValue[inputIndex]->Mask() ? inputValue[inputIndex]->Mask()->DeepClone() : nullptr);
+                    inputValue[inputIndex]->Mask());
             }
         }
-        std::unordered_map<Variable, ValuePtr> gradientMap = { { inputVar[0], inputGradientValue[f][0] }, { inputVar[1], inputGradientValue[f][1] } };
+        std::unordered_map<Variable, ValuePtr> gradientMap;
+        if (!isLeftSparse) gradientMap.insert(std::make_pair(inputVar[0], inputGradientValue[f][0]));
+        if (!isRightSparse) gradientMap.insert(std::make_pair(inputVar[1], inputGradientValue[f][1]));
         funcs[f]->Backward(backpropState, { { funcs[f]->Output(), rootGradientValue } }, gradientMap);
     }
 
@@ -441,6 +445,7 @@ void TestTimesReduceSequenceAxis(
 
     for (int inputIndex = 0; inputIndex < NumInputs; ++inputIndex)
     {
+        if (inputSparse[inputIndex]) continue;
         FloatingPointVectorCompare(inputGradientData[(int)FuncType::Times_ReduceSequenceAxis][inputIndex], inputGradientData[(int)FuncType::ReduceSumTimes][inputIndex], "Backprop results do not match expected results for Sequence::ReduceSum(Times())");
     }
 }
@@ -461,12 +466,18 @@ BOOST_AUTO_TEST_CASE(TimesReduceSequenceAxis)
 {
     if (IsGPUAvailable())
     {
-        TestTimesReduceSequenceAxis<double>(153, 21, {20, 7, 8}, DeviceDescriptor::GPUDevice(0));
-        TestTimesReduceSequenceAxis<double>(345, 1, { 7, 8 }, DeviceDescriptor::GPUDevice(0));
+        TestTimesReduceSequenceAxis<double>(153, 21, false, false, { 20, 7, 8 }, DeviceDescriptor::GPUDevice(0));
+        TestTimesReduceSequenceAxis<double>(153, 21, false, false, { 20 }, DeviceDescriptor::GPUDevice(0));
+        TestTimesReduceSequenceAxis<double>(345, 1, false, false, { 7, 8 }, DeviceDescriptor::GPUDevice(0));
+        TestTimesReduceSequenceAxis<double>(345, 1, true, false, { 7, 8 }, DeviceDescriptor::GPUDevice(0));
+        TestTimesReduceSequenceAxis<double>(345, 1, true, false, { 7 }, DeviceDescriptor::GPUDevice(0));
     }
 
-    TestTimesReduceSequenceAxis<double>(153, 21, {20, 7, 8}, DeviceDescriptor::CPUDevice());
-    TestTimesReduceSequenceAxis<double>(345, 1, {7, 8}, DeviceDescriptor::CPUDevice());
+    TestTimesReduceSequenceAxis<double>(153, 21, false, false, { 20, 7, 8 }, DeviceDescriptor::CPUDevice());
+    TestTimesReduceSequenceAxis<double>(153, 21, false, false, { 20 }, DeviceDescriptor::CPUDevice());
+    TestTimesReduceSequenceAxis<double>(345, 1, false, false, { 7, 8 }, DeviceDescriptor::CPUDevice());
+    TestTimesReduceSequenceAxis<double>(345, 1, true, false, { 7, 8 }, DeviceDescriptor::CPUDevice());
+    TestTimesReduceSequenceAxis<double>(345, 1, true, false, { 7 }, DeviceDescriptor::CPUDevice());
 }
 
 BOOST_AUTO_TEST_CASE(FFTimesAndPlusInGPU)
