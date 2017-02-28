@@ -351,7 +351,7 @@ void TestTimesReduceSequenceAxis(
         InputVariable({ inputDimK }, isRightSparse, AsDataType<ElementType>(), /*needsGradient*/ !isRightSparse, L"inputRight")
     };
 
-    FunctionPtr funcs[FuncType::TotalTypes]=
+    FunctionPtr funcs[(int)FuncType::TotalTypes]=
     {
         Times(inputVar[0], inputVar[1], 1, InferInputRankToMapReduceSequenceAxis),
         Sequence::ReduceSum(Times(inputVar[0], inputVar[1]))
@@ -377,12 +377,12 @@ void TestTimesReduceSequenceAxis(
 
     std::unordered_map<Variable, ValuePtr> inputMap = { { inputVar[0], inputValue[0] },{ inputVar[1], inputValue[1] } };
 
-    std::vector<ElementType> outputData[FuncType::TotalTypes];
-    ValuePtr outputValue[FuncType::TotalTypes];
+    std::vector<ElementType> outputData[(int)FuncType::TotalTypes];
+    ValuePtr outputValue[(int)FuncType::TotalTypes];
     NDShape outputShape = funcs[0]->Output().Shape().AppendShape({ 1, numSequences });
 
-    std::vector<ElementType> inputGradientData[FuncType::TotalTypes][NumInputs];
-    ValuePtr inputGradientValue[FuncType::TotalTypes][NumInputs];
+    std::vector<ElementType> inputGradientData[(int)FuncType::TotalTypes][NumInputs];
+    ValuePtr inputGradientValue[(int)FuncType::TotalTypes][NumInputs];
 
     std::vector<ElementType> rootGradientsData(outputShape.TotalSize(), 1);
     ValuePtr rootGradientValue;
