@@ -262,7 +262,7 @@ class TimesNodeBase : public ComputationNode<ElemType>, public NumInputs<2>
 
     typedef ComputationNode<ElemType> Base; UsingComputationNodeMembers; using Base::OperationName;                                                                                                                           \
 
-protected:
+public:
     enum : int
     {
         InferInputRankToMap_KeepAllDynamicAxes = -1, // the default, keep all dynamic axes in the output of Times
@@ -888,7 +888,7 @@ class TimesNode : public TimesNodeBase<ElemType, false>
     static const std::wstring TypeName() { return L"Times"; }
 
 public:
-    TimesNode(DEVICEID_TYPE deviceId, const wstring& name, size_t outputRank = 1, int inferInputRankToMap = InferInputRankToMap_KeepAllDynamicAxes)
+    TimesNode(DEVICEID_TYPE deviceId, const wstring& name, size_t outputRank = 1, int inferInputRankToMap = Base::InferInputRankToMap_KeepAllDynamicAxes)
         : Base(deviceId, name, outputRank, inferInputRankToMap)
     {
     }
@@ -921,7 +921,7 @@ class TransposeTimesNode : public TimesNodeBase<ElemType, true>
 public:
     DeclareConstructorFromConfigWithNumInputs(TransposeTimesNode);
     TransposeTimesNode(DEVICEID_TYPE deviceId, const wstring& name, size_t outputRank = 1)
-        : Base(deviceId, name, outputRank, InferInputRankToMap_KeepAllDynamicAxes)
+        : Base(deviceId, name, outputRank, Base::InferInputRankToMap_KeepAllDynamicAxes)
     {
         if (outputRank != 1)
             LogicError("TransposeTimes does not yet support outputRank other than 1");
