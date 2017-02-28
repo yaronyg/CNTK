@@ -3252,6 +3252,14 @@ namespace CNTK
     /// TODO: Specify the constraints on the shapes of the operands.
     /// TODO: Document inferInputRankToMap
     ///
+
+    // special values for Times inferInputRankToMap
+    enum : int
+    {
+        InferInputRankToMapKeepAllDynamicAxes = -1, // the default, keep all dynamic axes in the output of Times
+        InferInputRankToMapReduceSequenceAxis = -2, // reduce the sequence axis in the output of Times. Currently only support cases like (m x k x *s x *b) * (k x *s x *b) -> (m x *b)
+    };
+
     CNTK_API FunctionPtr Times(const Variable& leftOperand, const Variable& rightOperand, size_t outputRank, int inferInputRankToMap, const std::wstring& name = L"");
 
     ///
@@ -3261,7 +3269,7 @@ namespace CNTK
     ///
     inline FunctionPtr Times(const Variable& leftOperand, const Variable& rightOperand, size_t outputRank, const std::wstring& name = L"")
     {
-        return Times(leftOperand, rightOperand, outputRank, /*inferInputRankToMap =*/ -1, name);
+        return Times(leftOperand, rightOperand, outputRank, InferInputRankToMapKeepAllDynamicAxes, name);
     }
 
     ///

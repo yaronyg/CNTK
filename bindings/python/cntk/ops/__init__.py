@@ -13,6 +13,10 @@ from .functions import CloneMethod, Function, load_model
 from .variables import Variable, Parameter, Constant
 from ..utils import sanitize_input, sanitize_shape, get_data_type, sanitize_axis, sanitize_dynamic_axes, typemap
 from ..axis import Axis
+from .. import cntk_py
+
+INFER_INPUT_RANK_TO_MAP_KEEP_ALL_DYNAMIC_AXES = cntk_py.InferInputRankToMapKeepAllDynamicAxes
+INFER_INPUT_RANK_TO_MAP_REDUCE_SEQUENCE_AXIS  = cntk_py.InferInputRankToMapReduceSequenceAxis
 
 @typemap
 def combine(operands, name=''):
@@ -1081,13 +1085,20 @@ def log_add_exp(left, right, name=''):
     right = sanitize_input(right, dtype)
     return cntk_py_log_add_exp(left, right, name)
 
+INFINITELY_REPEAT = cntk_py.MinibatchSource.infinitely_repeat
 
 @typemap
-def times(left, right, output_rank=1, infer_input_rank_to_map=-1, name=''):
+def times(left, right, output_rank=1, infer_input_rank_to_map=INFER_INPUT_RANK_TO_MAP_KEEP_ALL_DYNAMIC_AXES, name=''):
     '''
     The output of this operation is the matrix product of the two input matrices.
     It supports broadcasting. Sparse is supported in the left operand, if it is a matrix.
     The operator '@' has been overloaded such that in Python 3.5 and later X @ W equals times(X, W).
+    
+    For better performance on times operation on sequence which is followed by sequence.reduce_sum, use
+    infer_input_rank_to_map=INFER_INPUT_RANK_TO_MAP_REDUCE_SEQUENCE_AXIS, i.e. replace following:
+        sequence.reduce_sum(times(seq1, seq2))
+    with:
+        times(seq1, seq2, infer_input_rank_to_map=INFER_INPUT_RANK_TO_MAP_REDUCE_SEQUENCE_AXIS)
 
     Example:
         >>> C.times([[1,2],[3,4]], [[5],[6]]).eval()

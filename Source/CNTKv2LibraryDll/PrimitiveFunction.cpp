@@ -145,7 +145,9 @@ namespace CNTK
         {
             outputDynamicAxes = std::vector<Axis>({});
         }
-        else if ((op == PrimitiveOpType::ReduceElements) && functionConfig[PrimitiveFunction::AttributeNameAxis].Value<Axis>().IsDynamicAxis() && (inputs[0].DynamicAxes() != Axis::UnknownDynamicAxes()))
+        else if ((op == PrimitiveOpType::ReduceElements || (op == PrimitiveOpType::Times && functionConfig.Contains(PrimitiveFunction::AttributeNameAxis))) &&
+                 functionConfig[PrimitiveFunction::AttributeNameAxis].Value<Axis>().IsDynamicAxis() &&
+                 (inputs[0].DynamicAxes() != Axis::UnknownDynamicAxes()))
         {
             auto reductionAxis = NormalizeAxis(functionConfig[PrimitiveFunction::AttributeNameAxis].Value<Axis>(), inputs[0]);
             for (auto inputDynamicAxis : inputs[0].DynamicAxes())

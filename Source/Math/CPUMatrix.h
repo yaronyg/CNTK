@@ -499,9 +499,12 @@ public:
         int format = us.GetFormat();
         stream << s << format;
 
-        stream << us.m_numRows << us.m_numCols;
+        stream << us.m_numRows << us.m_numCols << "\n";
         for (size_t i = 0; i < us.GetNumElements(); ++i)
-            stream << us.Buffer()[i];
+        {
+            stream << us.Data()[i];
+            if (i % us.m_numRows == (us.m_numRows - 1)) stream << "\n";
+        }
         stream.PutMarker(fileMarkerEndSection, std::wstring(L"EMAT"));
         return stream;
     }

@@ -261,8 +261,15 @@ class TimesNodeBase : public ComputationNode<ElemType>, public NumInputs<2>
 
     typedef ComputationNode<ElemType> Base; UsingComputationNodeMembers; using Base::OperationName;                                                                                                                           \
 
+protected:
+    enum : int
+    {
+        InferInputRankToMap_KeepAllDynamicAxes = -1, // the default, keep all dynamic axes in the output of Times
+        InferInputRankToMap_ReduceSequenceAxis = -2, // reduce the sequence axis in the output of Times. Currently only support cases like (m x k x s* x b*) x (k x s* x b*) -> (m x b*)
+    };
+
 public:
-    TimesNodeBase(DEVICEID_TYPE deviceId, const wstring& name, size_t outputRank = 1, int inferInputRankToMap = -1)
+    TimesNodeBase(DEVICEID_TYPE deviceId, const wstring& name, size_t outputRank = 1, int inferInputRankToMap = InferInputRankToMap_KeepAllDynamicAxes)
         : Base(deviceId, name), m_outputRank(outputRank), m_inferInputRankToMap(inferInputRankToMap), m_beingUnrolled(false)
     {
     }
@@ -295,7 +302,7 @@ public:
         if (modelVersion >= CNTK_MODEL_VERSION_12)
             fstream >> m_inferInputRankToMap;
         else
-            m_inferInputRankToMap = -1;
+            m_inferInputRankToMap = InferInputRankToMap_KeepAllDynamicAxes;
     }
 
 protected:
@@ -347,6 +354,108 @@ private:
         return input0_ok && input1_ok && outputScalar && notBothSparse && (m_transpose || !hasSparse);
     }
 
+    void ForwardProp_ReduceSequenceAxis()
+    {
+        // Input are stored as (m * k) x b*(batch axis) x s*(sequence axis) and k x b* x s*
+        // We unpack them to (m * k) x s* x b* and k x s* x b*
+        // Then perform b* matrix multiplies to get m x b* with both k and s* being resolved
+        auto inputMBLayout = InputRef(0).GetMBLayout();
+        auto numSequences = inputMBLayout->GetNumSequences(); // b*
+        auto maxNumTimeSteps = inputMBLayout->GetNumTimeSteps(); // s*
+        size_t m = InputRef(0).GetSampleLayout()[0];
+        size_t k = InputRef(1).GetSampleLayout()[0];
+
+        GetMBLayout()->InitAsFrameMode(numSequences);
+        UpdateFunctionValuesSize();
+
+        TensorView<ElemType> unpackedInput[NumInputs];
+        for (int i = 0; i < NumInputs; i++)
+        {
+            unpackedInput[i] = ComputationNode<ElemType>::Unpack(
+                InputRef(i).GetSampleLayout(),
+                InputRef(i).Value(),
+                inputMBLayout, m_tempUnpackedValue[i],
+                m_tempScatterIndices[i],
+                /*batchMajor=*/ false,
+                /*maskGaps=*/ true);
+        }
+
+        // note the unpacked input is not the normal MBLayout (batchMajor) so do ColumnSlice directly
+        const Matrix<ElemType>& mat0 = unpackedInput[0].GetSOB();
+        const Matrix<ElemType>& mat1 = unpackedInput[1].GetSOB();
+        for (int s = 0; s < numSequences; s++)
+        {
+            Matrix<ElemType> mat0Slice = mat0.ColumnSlice(s * maxNumTimeSteps, maxNumTimeSteps); // (m * k) x s*
+            mat0Slice.Reshape(m, k * maxNumTimeSteps); // m x (k * s*)
+            Matrix<ElemType> mat1Slice = mat1.ColumnSlice(s * maxNumTimeSteps, maxNumTimeSteps); // k x s*
+            mat1Slice.Reshape(k * maxNumTimeSteps, 1); // (k * s*) x 1
+
+            Matrix<ElemType> value = Value().ColumnSlice(s, 1);
+            Matrix<ElemType>::Multiply(mat0Slice, false, mat1Slice, false, value);
+        }
+    }
+
+    void BackpropTo_ReduceSequenceAxis(size_t inputIndex)
+    {
+        auto input0MBLayout = InputRef(0).GetMBLayout();
+        auto numSequences = input0MBLayout->GetNumSequences(); // b*
+        auto maxNumTimeSteps = input0MBLayout->GetNumTimeSteps(); // s*
+        size_t m = InputRef(0).GetSampleLayout()[0];
+        size_t k = InputRef(1).GetSampleLayout()[0];
+
+        TensorView<ElemType> unpackedInput[NumInputs];
+        for (int i = 0; i < NumInputs; i++)
+        {
+            auto layout = InputRef(i).GetMBLayout();
+            TensorShape unpackedShape = InputRef(i).GetSampleLayout();
+
+            size_t rank = unpackedShape.GetRank();
+            unpackedShape = unpackedShape.AppendInPlace(rank++, maxNumTimeSteps);
+            unpackedShape = unpackedShape.AppendInPlace(rank++, numSequences);
+
+            auto matValue =
+                (maxNumTimeSteps == 1 || numSequences == 1) ?
+                InputRef(i).ValuePtr() :
+                m_tempUnpackedValue[i];
+
+            unpackedInput[i] = TensorView<ElemType>(matValue, unpackedShape);
+        }
+
+        const auto& unpackedInputValue = unpackedInput[1 - inputIndex].GetSOB();
+
+        ElemType beta = InputRef(inputIndex).ParentOverwritesGradient() ? (ElemType)0 : (ElemType)1;
+
+        // note the unpacked input is not the normal MBLayout (batchMajor), so do ColumnSlice directly
+        if (inputIndex == 0)
+        {
+            Matrix<ElemType> inputGradientUnpacked(m * k, maxNumTimeSteps * numSequences, InputRef(inputIndex).GetDeviceId());
+            for (int s = 0; s < numSequences; s++)
+            {
+                Matrix<ElemType> inputGradientSlice = inputGradientUnpacked.ColumnSlice(s * maxNumTimeSteps, maxNumTimeSteps); // (m * k) x s*
+                inputGradientSlice.Reshape(m, k * maxNumTimeSteps); // m x (k * s*)
+                Matrix<ElemType> inputValueSlice = unpackedInputValue.ColumnSlice(s * maxNumTimeSteps, maxNumTimeSteps); // k x s*
+                inputValueSlice.Reshape(k * maxNumTimeSteps, 1); // (k * s*) x 1
+                Matrix<ElemType> gradientSlice = Gradient().ColumnSlice(s, 1); // m x 1
+                Matrix<ElemType>::MultiplyAndWeightedAdd(1, gradientSlice, false, inputValueSlice, true, 0, inputGradientSlice);
+            }
+            InputRef(inputIndex).Gradient().DoGatherColumnsOf(beta, *m_tempScatterIndices[inputIndex], inputGradientUnpacked, 1);
+        }
+        else
+        {
+            Matrix<ElemType> inputGradientUnpacked(k, maxNumTimeSteps * numSequences, InputRef(inputIndex).GetDeviceId());
+            for (int s = 0; s < numSequences; s++)
+            {
+                Matrix<ElemType> inputGradientSlice = inputGradientUnpacked.ColumnSlice(s * maxNumTimeSteps, maxNumTimeSteps); // k x s*
+                inputGradientSlice.Reshape(k * maxNumTimeSteps, 1); // (k * s*) x 1
+                Matrix<ElemType> inputValueSlice = unpackedInputValue.ColumnSlice(s * maxNumTimeSteps, maxNumTimeSteps); // (m * k) x s*
+                inputValueSlice.Reshape(m, k * maxNumTimeSteps); // m x (k * s*)
+                Matrix<ElemType> gradientSlice = Gradient().ColumnSlice(s, 1); // m x 1
+                Matrix<ElemType>::MultiplyAndWeightedAdd(1, inputValueSlice, true, gradientSlice, false, 0, inputGradientSlice);
+            }
+            InputRef(inputIndex).Gradient().DoGatherColumnsOf(beta, *m_tempScatterIndices[inputIndex], inputGradientUnpacked, 1);
+        }
+    }
+
 public:
     virtual void /*ComputationNode::*/ ForwardProp(const FrameRange& fr) override
     {
@@ -354,7 +463,17 @@ public:
         // This will be inefficient. We hope this will be the baseline of a future, more efficient TensorView-based implementation.
         if (!fr.IsOneColumnWrt(InputRef(0).GetMBLayout()))
         {
-            // speed up using ElementTimes to avoid unroll if possible
+            if (ReduceSequenceAxis())
+            {
+                // only works in PAR mode
+                if (!fr.IsAllFrames())
+                    RuntimeError("%ls %ls operation can perform sequence axis reduction only for all frames.", NodeName().c_str(), OperationName().c_str());
+
+                ForwardProp_ReduceSequenceAxis();
+                return;
+            }
+
+            // speed up using ElementTimes or InnerProduct to avoid unroll if possible
             bool hasSparse;
             if (IsReduceableDotProduct(fr, hasSparse))
             {
@@ -401,7 +520,17 @@ public:
         // special treatment if A is minibatch data; see Forward() for comment
         if (!fr.IsOneColumnWrt(InputRef(0).GetMBLayout()))
         {
-            // speed up using ElementTimes to avoid unroll if possible
+            if (ReduceSequenceAxis())
+            {
+                // only works in PAR mode
+                if (!fr.IsAllFrames())
+                    RuntimeError("%ls %ls operation can perform sequence axis reduction only for all frames.", NodeName().c_str(), OperationName().c_str());
+
+                BackpropTo_ReduceSequenceAxis(inputIndex);
+                return;
+            }
+            
+            // speed up using ElementTimes or InnerProduct to avoid unroll if possible
             bool hasSparse;
             if (IsReduceableDotProduct(fr, hasSparse))
             {
@@ -523,7 +652,32 @@ public:
     virtual void /*ComputationNodeBase::*/ Validate(bool isFinalValidationPass) override
     {
         Base::Validate(isFinalValidationPass);
-        InferMBLayoutFromInputsForStandardCase(isFinalValidationPass);
+
+        if (ReduceSequenceAxis())
+        {
+            // generate MBLayout without sequence axis
+            if (!Input(0)->HasMBLayout() || !Input(1)->HasMBLayout() || *(Input(0)->GetMBLayout()) != *(Input(1)->GetMBLayout()))
+                InvalidArgument("%ls %ls operation can perform sequence axis reduction only on matching dynamic axes for both operands (which have the same layouts).", NodeName().c_str(), OperationName().c_str());
+
+            const auto& input0SampleLayout = InputRef(0).GetSampleLayout();
+            const auto& input1SampleLayout = InputRef(1).GetSampleLayout();
+
+            if ((input0SampleLayout.GetRank() > 1 && input0SampleLayout[1] != input1SampleLayout[0]) ||
+                (input1SampleLayout.GetRank() > 1 && input1SampleLayout[1] != 1) ||
+                (input0SampleLayout.GetRank() <= 1 && input1SampleLayout[0] != 1) ||
+                m_transpose)
+                InvalidArgument("%ls %ls operation can perform sequence axis reduction only in forms of (m x k) * (k x 1), without transpose.", NodeName().c_str(), OperationName().c_str());
+
+            if (m_pMBLayout == nullptr)
+            {
+                m_pMBLayout = make_shared<MBLayout>(); // this generates a new layout
+                m_pMBLayout->SetUniqueAxisName(ComputationNodeBase::DefaultNoSequenceAxisName);
+            }
+        }
+        else
+        {
+            InferMBLayoutFromInputsForStandardCase(isFinalValidationPass);
+        }
 
         bool transpose = m_transpose; // (assigning to a non-const variable avoids a compiler warning C4127: conditional expression is constant)
 
@@ -644,6 +798,36 @@ public:
         }
     }
 
+    void RequestMatricesBeforeForwardProp(MatrixPool& matrixPool) override
+    {
+        Base::RequestMatricesBeforeForwardProp(matrixPool);
+
+        if (ReduceSequenceAxis())
+        {
+            for(int i = 0; i < NumInputs; i++)
+            {
+                RequestMatrixFromPool(m_tempScatterIndices[i], matrixPool, InputRef(i).GetMBLayout()->GetNumCols(), true);
+                if (InputRef(i).Value().GetMatrixType() == DENSE)
+                    RequestMatrixFromPool(m_tempUnpackedValue[i], matrixPool, InputRef(i).GetSampleLayout().GetNumElements(), true);
+            }
+        }
+    }
+
+    void ReleaseMatricesAfterBackprop(MatrixPool& matrixPool) override
+    {
+        Base::ReleaseMatricesAfterBackprop(matrixPool);
+
+        if (ReduceSequenceAxis())
+        {
+            for (int i = 0; i < NumInputs; i++)
+            {
+                ReleaseMatrixToPool(m_tempScatterIndices[i], matrixPool);
+                if (InputRef(i).Value().GetMatrixType() == DENSE)
+                    ReleaseMatrixToPool(m_tempUnpackedValue[i], matrixPool);
+            }
+        }
+    }
+
     size_t OutputRank() const { return m_outputRank; }
     int InferInputRankToMap() const { return m_inferInputRankToMap; }
 
@@ -654,6 +838,12 @@ private:
     size_t m_outputRank;
     int m_inferInputRankToMap;  // -1 (not specified) or says how to expand shape of W, to keep this many mapping dims
     bool m_beingUnrolled;
+
+    bool ReduceSequenceAxis() const { return m_inferInputRankToMap == InferInputRankToMap_ReduceSequenceAxis; }
+
+    static const int NumInputs = 2;
+    shared_ptr<Matrix<ElemType>> m_tempScatterIndices[NumInputs];
+    shared_ptr<Matrix<ElemType>> m_tempUnpackedValue[NumInputs];
 };
 
 // -----------------------------------------------------------------------
@@ -680,7 +870,7 @@ class TimesNode : public TimesNodeBase<ElemType, false>
     static const std::wstring TypeName() { return L"Times"; }
 
 public:
-    TimesNode(DEVICEID_TYPE deviceId, const wstring& name, size_t outputRank = 1, int inferInputRankToMap = -1)
+    TimesNode(DEVICEID_TYPE deviceId, const wstring& name, size_t outputRank = 1, int inferInputRankToMap = InferInputRankToMap_KeepAllDynamicAxes)
         : Base(deviceId, name, outputRank, inferInputRankToMap)
     {
     }
@@ -713,7 +903,7 @@ class TransposeTimesNode : public TimesNodeBase<ElemType, true>
 public:
     DeclareConstructorFromConfigWithNumInputs(TransposeTimesNode);
     TransposeTimesNode(DEVICEID_TYPE deviceId, const wstring& name, size_t outputRank = 1)
-        : Base(deviceId, name, outputRank, /*inferInputRankToMap=*/-1)
+        : Base(deviceId, name, outputRank, InferInputRankToMap_KeepAllDynamicAxes)
     {
         if (outputRank != 1)
             LogicError("TransposeTimes does not yet support outputRank other than 1");

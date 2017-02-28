@@ -979,6 +979,10 @@ namespace CNTK
         auto additionalProperties = Dictionary();
         additionalProperties[PrimitiveFunction::AttributeNameOutputRank] = outputRank;
         additionalProperties[PrimitiveFunction::AttributeNameInferInputRankToMap] = inferInputRankToMap;
+        if (inferInputRankToMap == InferInputRankToMapReduceSequenceAxis)
+        {
+            additionalProperties[PrimitiveFunction::AttributeNameAxis] = Axis::OperandSequenceAxis();
+        }
         return BinaryOp(PrimitiveOpType::Times, leftOperand, rightOperand, std::move(additionalProperties), name);
     }
 
