@@ -116,7 +116,7 @@ void TrainMNISTClassifier(const DeviceDescriptor& device)
 
     auto featureStreamName = L"features";
     auto labelsStreamName = L"labels";
-    auto minibatchSource = TextFormatMinibatchSource(L"Train-28x28_cntk_text.txt", { { featureStreamName, inputDim }, { labelsStreamName, numOutputClasses } });
+    auto minibatchSource = TextFormatMinibatchSource(L"D:\\GithubWorkspaces\\multiverso-next\\data\\Train-28x28_cntk_text.txt", { { featureStreamName, inputDim }, { labelsStreamName, numOutputClasses } });
 
     auto featureStreamInfo = minibatchSource->StreamInfo(featureStreamName);
     auto labelStreamInfo = minibatchSource->StreamInfo(labelsStreamName);
@@ -136,10 +136,10 @@ void TrainMNISTClassifier(const DeviceDescriptor& device)
 void TrainerTests()
 {
     fprintf(stderr, "\nTrainerTests..\n");
-
+    TrainMNISTClassifier(DeviceDescriptor::CPUDevice());
     TrainSimpleFeedForwardClassifer(DeviceDescriptor::CPUDevice());
-    if (IsGPUAvailable())
-    {
-        TrainMNISTClassifier(DeviceDescriptor::GPUDevice(0));
-    }
+    //if (IsGPUAvailable())
+    //{
+    //    TrainMNISTClassifier(DeviceDescriptor::GPUDevice(0));
+    //}
 }

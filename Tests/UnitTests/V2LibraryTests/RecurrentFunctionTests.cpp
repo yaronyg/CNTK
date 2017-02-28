@@ -380,6 +380,8 @@ void TestSimpleRecurrence(size_t inputDim,
 
 void RecurrentFunctionTests()
 {
+    TestRecurrentNetworkCreation<double>(DeviceDescriptor::CPUDevice(), false);
+
     fprintf(stderr, "\nRecurrentFunctionTests..\n");
 
     TestSimpleRecurrence<float>(2, 1, 4, 1, DeviceDescriptor::CPUDevice(), true, 3, false, false);
