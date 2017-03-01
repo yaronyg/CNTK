@@ -425,6 +425,32 @@ namespace CNTK
                             outputShape = { outW, outH, numChannels, roisPerImage };
                             break;
                         }
+                        case PrimitiveOpType::PSROIPooling:
+                        {
+                            assert(m_inputs.size() == 2);
+                            auto convMapShape = m_inputs[0].Shape();
+                            auto roisShape = m_inputs[1].Shape();
+                            auto psROIGroupSize = m_attributes[PrimitiveFunction::AttributeNamePSROIGroupSize].Value<int>();
+                            auto psROIOutputDim = m_attributes[PrimitiveFunction::AttributeNamePSROIOutputDim].Value<int>();
+
+                            if (convMapShape[2] != psROIGroupSize * psROIGroupSize * psROIOutputDim)
+                                InvalidArgument("PSROIPoolingNode: the numChannels of inShape must equal to groupSize * groupSize * outputDim");
+
+                            if (convMapShape[0] < psROIGroupSize || convMapShape[1] < psROIGroupSize)
+                                InvalidArgument("PSROIPoolingNode: the width/height of window must be bigger than that of inShape");
+
+                            if (convMapShape[2] < 1)
+                                InvalidArgument("PSROIPoolingNode: the numChannels of inShape must be bigger than 0");
+
+                            if (roisShape[1] < 1)
+                                InvalidArgument("PSROIPoolingNode: the number of ROI should be at least 1");
+
+                            if (roisShape[0] != 4)
+                                InvalidArgument("PSROIPoolingNode: ROI input must have the following shape: [4 x roisPerImage].");
+
+                            outputShape = { psROIGroupSize, psROIGroupSize, psROIOutputDim, roisShape[1] };
+                            break;
+                        }
                         case PrimitiveOpType::Pooling:
                         {
                             assert(m_inputs.size() == 1);

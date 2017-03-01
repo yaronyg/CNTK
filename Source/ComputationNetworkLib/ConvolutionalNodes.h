@@ -743,6 +743,109 @@ protected:
 };
 
 // -----------------------------------------------------------------------
+// PSROIPoolingNode (inputFeatures, inputROIs) -- Position-sensitive ROI Pooling
+// See https://arxiv.org/abs/1605.06409
+// -----------------------------------------------------------------------
+template <class ElemType>
+class PSROIPoolingNode : ComputationNode<ElemType>, public NumInputs<2>
+{
+    typedef ComputationNode<ElemType> Base; UsingComputationNodeMembersBoilerplate;
+    static const std::wstring TypeName() { return L"PSROIPooling"; }
+public:
+    PSROIPoolingNode(DEVICEID_TYPE deviceId, const wstring& name)
+        : Base(deviceId, name)
+    {
+    }
+    PSROIPoolingNode(DEVICEID_TYPE deviceId, const wstring& name, int groupSize, int outputDim)
+        : Base(deviceId, name), m_groupSize(groupSize), m_outputDim(outputDim)
+    {
+    }
+    PSROIPoolingNode(const ScriptableObjects::IConfigRecordPtr configp)
+        : PSROIPoolingNode(configp->Get(L"deviceId"), L"<placeholder>", configp->Get(L"groupSize"), configp->Get(L"outputDim"))
+    {
+        AttachInputsFromConfig(configp, GetExpectedNumInputs());
+    }
+
+    void RequestMatricesBeforeForwardProp(MatrixPool& matrixPool) override
+    {
+        Base::RequestMatricesBeforeForwardProp(matrixPool);
+        size_t matrixSize = m_sampleLayout.GetNumElements();
+        RequestMatrixFromPool(m_tempMatrix, matrixPool, matrixSize, true);
+    }
+
+    // m_tempMatrix cannot be released after Forward Prop because its content (argmax) is used for back prop. 
+
+    void ReleaseMatricesAfterBackprop(MatrixPool& matrixPool) override
+    {
+        Base::ReleaseMatricesAfterBackprop(matrixPool);
+        ReleaseMatrixToPool(m_tempMatrix, matrixPool)
+    }
+
+    void ForwardProp(const FrameRange& fr) override;
+
+    void Save(File& fstream) const override
+    {
+        Base::Save(fstream);
+        fstream << m_groupSize;
+        fstream << m_outputDim;
+    }
+
+    void Load(File& fstream, size_t modelVersion) override
+    {
+        Base::Load(fstream);
+        fstream >> m_groupSize;
+        fstream >> m_outputDim;
+    }
+
+    void Validate(bool isFinalValidationPass) override
+    {
+        Base::Validate(isFinalValidationPass);
+        InferMBLayoutFromInputsForStandardCase(isFinalValidationPass);
+
+        auto inShape = GetInputSampleLayout(0);  // layout of input shape is width x height x numChannels
+        auto roiShape = GetInputSampleLayout(1); // layout of ROI shape is 4 x roisPerImage
+
+        if (isFinalValidationPass && inShape[2] != m_groupSize * m_groupSize * m_outputDim)
+            InvalidArgument("PSROIPoolingNode: the numChannels of inShape must equal to groupSize * groupSize * outputDim");
+
+        if (isFinalValidationPass && (inShape[0] < m_groupSize || inShape[1] < m_groupSize))
+            InvalidArgument("PSROIPoolingNode: the width/height of window must be bigger than that of inShape");
+
+        if (isFinalValidationPass && inShape[2] < 1)
+            InvalidArgument("PSROIPoolingNode: the numChannels of inShape must be bigger than 0");
+
+        if (isFinalValidationPass && roiShape[1] < 1)
+            InvalidArgument("PSROIPoolingNode: the number of ROI should be at least 1");
+
+        if (isFinalValidationPass && roiShape[0] != 4)
+            InvalidArgument("PSROIPoolingNode: ROI input must have the following shape: [4 x roisPerImage].");
+
+        setDims(TensorShape(m_groupSize, m_groupSize, m_outputDim, roiShape[1]), HasMBLayout());
+    }
+
+    void BackpropTo(const size_t /*inputIndex*/, const FrameRange& fr) override;
+
+    void CopyTo(ComputationNodeBasePtr nodeP, const std::wstring& newName, const CopyNodeFlags flags) const override
+    {
+        Base::CopyTo(nodeP, newName, flags);
+        if (flags & CopyNodeFlags::copyNodeValue)
+        {
+            auto node = dynamic_pointer_cast<PSROIPoolingNode<ElemType>>(nodeP);
+            node->m_groupSize = m_groupSize;
+            node->m_outputDim = m_outputDim;
+        }
+    }
+
+    int PSROIGroupSize() { return m_groupSize; }
+    int PSROIOutputDim() { return m_outputDim; }
+
+protected:
+    int m_groupSize;
+    int m_outputDim;
+    shared_ptr<Matrix<ElemType>> m_tempMatrix;
+};
+
+// -----------------------------------------------------------------------
 // PoolingNode (inputFeature)
 // Performs max or average ND pooling.
 // -----------------------------------------------------------------------
