@@ -22,6 +22,7 @@
 #include "RNNNodes.h"
 #include "PreComputeNodes.h"
 #include "DeprecatedNodes.h"
+#include "SpecialPurposeNodes.h"
 
 using namespace Microsoft::MSR::CNTK;
 
@@ -455,6 +456,14 @@ namespace CNTK
                     primitiveFunctionConfigParameters[PrimitiveFunction::AttributeNameTokensToIgnore] = AsDictionaryValueVector(edNode->TokensToIgnore());
 
                     opType = PrimitiveOpType::EditDistanceError;
+                }
+                else if (node->OperationName() == OperationNameOf(ForwardBackwardNode))
+                {
+                    auto edNode = node->As<ForwardBackwardNode<ElementType>>();
+                    primitiveFunctionConfigParameters[PrimitiveFunction::AttributeNameDelayConstraint] = edNode->DelayConstraint();
+                    primitiveFunctionConfigParameters[PrimitiveFunction::AttributeNameBlankTokenId] = edNode->BlankTokenId();
+
+                    opType = PrimitiveOpType::ForwardBackward;
                 }
                 else if ((node->OperationName() == OperationNameOf(MeanNode)) || (node->OperationName() == OperationNameOf(InvStdDevNode)))
                 {
