@@ -302,15 +302,18 @@ namespace CNTK
 
         Initialize(inputValues);
 
-        // for all values residing on GPU initiate async transfer to CPU buffers.
-        for (auto i = 0; i < numValues; ++i)
+        // for all values residing on GPU initiate async transfer to CPU buffers, if GPUDirect RDMA not supported
+        if (m_mpi->UseGpuGdr() == 0)
         {
-            auto view = inputValues[i];
-            if (view->Device() != DeviceDescriptor::CPUDevice())
+            for (auto i = 0; i < numValues; ++i)
             {
-                auto& transferer = m_gpuDataTransferers[i];
-                auto& buffer = m_intermediateCPUBuffers[i];
-                transferer->CopyGPUToCPUAsync(GetDataBuffer(view), GetBufferSize(view), buffer.data.get());
+                auto view = inputValues[i];
+                if (view->Device() != DeviceDescriptor::CPUDevice())
+                {
+                    auto& transferer = m_gpuDataTransferers[i];
+                    auto& buffer = m_intermediateCPUBuffers[i];
+                    transferer->CopyGPUToCPUAsync(GetDataBuffer(view), GetBufferSize(view), buffer.data.get());
+                }
             }
         }
 
@@ -319,7 +322,7 @@ namespace CNTK
         {
             auto inputValue = inputValues[i];
 
-            if (inputValue->Device() != DeviceDescriptor::CPUDevice())
+            if ((m_mpi->UseGpuGdr() == 0) && inputValue->Device() != DeviceDescriptor::CPUDevice())
             {
                 // TODO: actually, we can start reducing all cpu values first, and then wait for the gpu->cpu transfer to finish.
                 m_gpuDataTransferers[i]->WaitForCopyGPUToCPUAsync();
@@ -334,58 +337,58 @@ namespace CNTK
             assert(dataType == outputValue->GetDataType());
             assert(inputValue->Device() == outputValue->Device());
 
-            void* inputData = (inputValue->Device() != DeviceDescriptor::CPUDevice()) ? m_intermediateCPUBuffers[i].data.get() : GetDataBuffer(inputValue);
-            void* outputData = (inputValue->Device() != DeviceDescriptor::CPUDevice()) ? m_intermediateCPUBuffers[i].data.get() : GetDataBuffer(outputValue);
+            void* inputData = ((m_mpi->UseGpuGdr() == 0) && inputValue->Device() != DeviceDescriptor::CPUDevice()) ?
+                m_intermediateCPUBuffers[i].data.get() : GetDataBuffer(inputValue);
+            void* outputData = ((m_mpi->UseGpuGdr() == 0) && inputValue->Device() != DeviceDescriptor::CPUDevice()) ?
+                m_intermediateCPUBuffers[i].data.get() : GetDataBuffer(outputValue);
 
             if (dataType == DataType::Float)
             {
-                if (inputData == outputData)
-                    m_mpi->AllReduceAsync(static_cast<float*>(outputData), numElements, &allReduceRequests[i]);
-                else
-                    m_mpi->AllReduceAsync(static_cast<float*>(inputData), static_cast<float*>(outputData), numElements, &allReduceRequests[i]);
+                allReduce(static_cast<float*>(inputData), static_cast<float*>(outputData), numElements, &allReduceRequests[i]);
             }
             else if (dataType == DataType::Double)
             {
-                if (inputData == outputData)
-                    m_mpi->AllReduceAsync(static_cast<double*>(outputData), numElements, &allReduceRequests[i]);
-                else
-                    m_mpi->AllReduceAsync(static_cast<double*>(inputData), static_cast<double*>(outputData), numElements, &allReduceRequests[i]);
+                allReduce(static_cast<double*>(inputData), static_cast<double*>(outputData), numElements, &allReduceRequests[i]);
             }
             else
                 LogicError("Unknown DataType");
         }
 
-        // wait for async all reduce to complete. As soon as one of the requests is finished,
-        // check if corresponding value is gpu bound and, if it is the case, initiate a cpu-to-gpu transfer.
-        size_t numAllReduceRequestsCompleted = 0;
-        while (numAllReduceRequestsCompleted < numValues)
+        // TODO: Do asynchronize collection when it is supported in GPUDirect RDMA
+        if (m_mpi->UseGpuGdr() == 0)
         {
-            int idx = MPI_UNDEFINED;
-            m_mpi->WaitAny(allReduceRequests.data(), (int)allReduceRequests.size(), &idx);
-            if (idx == MPI_UNDEFINED)
+            // wait for async all reduce to complete. As soon as one of the requests is finished,
+            // check if corresponding value is gpu bound and, if it is the case, initiate a cpu-to-gpu transfer.
+            size_t numAllReduceRequestsCompleted = 0;
+            while (numAllReduceRequestsCompleted < numValues)
             {
-                break;
-            }
+                int idx = MPI_UNDEFINED;
+                m_mpi->WaitAny(allReduceRequests.data(), (int)allReduceRequests.size(), &idx);
+                if (idx == MPI_UNDEFINED)
+                {
+                    break;
+                }
 
-            numAllReduceRequestsCompleted++;
+                numAllReduceRequestsCompleted++;
 
-            assert(idx < inputValues.size());
-            auto value = inputValues[idx];
+                assert(idx < inputValues.size());
+                auto value = inputValues[idx];
 
-            if (value->Device() != DeviceDescriptor::CPUDevice())
-            {
-                auto view = outputValues[idx];
-                auto size = GetBufferSize(view);
-                auto& transferer = m_gpuDataTransferers[idx];
-                auto& buffer = m_intermediateCPUBuffers[idx];
-                transferer->CopyCPUToGPUAsync(buffer.data.get(), size, GetDataBuffer(view));
+                if (value->Device() != DeviceDescriptor::CPUDevice())
+                {
+                    auto view = outputValues[idx];
+                    auto size = GetBufferSize(view);
+                    auto& transferer = m_gpuDataTransferers[idx];
+                    auto& buffer = m_intermediateCPUBuffers[idx];
+                    transferer->CopyCPUToGPUAsync(buffer.data.get(), size, GetDataBuffer(view));
+                }
             }
         }
 
         // TODO: Should not wait, simply publishing event on the compute stream should be sufficient.
         for (auto i = 0; i < numValues; ++i)
         {
-            if (inputValues[i]->Device() != DeviceDescriptor::CPUDevice())
+            if ((m_mpi->UseGpuGdr() == 0) && inputValues[i]->Device() != DeviceDescriptor::CPUDevice())
                 m_gpuDataTransferers[i]->WaitForCopyCPUToGPUAsync();
         }
     }
@@ -393,5 +396,25 @@ namespace CNTK
     void  MPICommunicatorImpl::Barrier()
     {
         m_mpi->WaitAll();
+    }
+
+    template <typename ElemType>
+    void MPICommunicatorImpl::allReduce(ElemType* inputData, ElemType* outputData, size_t numElements, MPI_Request* allReduceRequest)
+    {
+        if (m_mpi->UseGpuGdr() == 0)
+        {
+            if (inputData == outputData)
+                m_mpi->AllReduceAsync(outputData, numElements, allReduceRequest);
+            else
+                m_mpi->AllReduceAsync(inputData, outputData, numElements, allReduceRequest);
+        }
+        // TODO: Change to asynchronize collection when it is supported by GPUDirect RDMA
+        else
+        {
+            if (inputData == outputData)
+                m_mpi->AllReduce(outputData, numElements);
+            else
+                m_mpi->AllReduce(inputData, outputData, numElements);
+        }
     }
 }

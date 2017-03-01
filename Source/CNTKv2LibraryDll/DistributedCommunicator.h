@@ -6,6 +6,7 @@
 #pragma once
 
 #include "CNTKLibrary.h"
+#include "MPIWrapper.h"
 #include <MatrixQuantizerImpl.h>
 
 namespace Microsoft { namespace MSR { namespace CNTK {
@@ -109,5 +110,8 @@ namespace CNTK
         void CheckWorkers(const std::unordered_set<DistributedWorkerDescriptor>& sendToWorkers);
 
         Microsoft::MSR::CNTK::MPIWrapperPtr m_mpi;
+
+        template <typename ElemType>
+        void allReduce(ElemType* inputData, ElemType* outputData, size_t numElements, MPI_Request* allReduceRequest);
     };
 }
