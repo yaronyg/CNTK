@@ -747,7 +747,7 @@ protected:
 // See https://arxiv.org/abs/1605.06409
 // -----------------------------------------------------------------------
 template <class ElemType>
-class PSROIPoolingNode : ComputationNode<ElemType>, public NumInputs<2>
+class PSROIPoolingNode : public ComputationNode<ElemType>, public NumInputs<2>
 {
     typedef ComputationNode<ElemType> Base; UsingComputationNodeMembersBoilerplate;
     static const std::wstring TypeName() { return L"PSROIPooling"; }
@@ -778,7 +778,7 @@ public:
     void ReleaseMatricesAfterBackprop(MatrixPool& matrixPool) override
     {
         Base::ReleaseMatricesAfterBackprop(matrixPool);
-        ReleaseMatrixToPool(m_tempMatrix, matrixPool)
+        ReleaseMatrixToPool(m_tempMatrix, matrixPool);
     }
 
     void ForwardProp(const FrameRange& fr) override;
@@ -792,7 +792,7 @@ public:
 
     void Load(File& fstream, size_t modelVersion) override
     {
-        Base::Load(fstream);
+        Base::Load(fstream, modelVersion);
         fstream >> m_groupSize;
         fstream >> m_outputDim;
     }
@@ -820,7 +820,7 @@ public:
         if (isFinalValidationPass && roiShape[0] != 4)
             InvalidArgument("PSROIPoolingNode: ROI input must have the following shape: [4 x roisPerImage].");
 
-        setDims(TensorShape(m_groupSize, m_groupSize, m_outputDim, roiShape[1]), HasMBLayout());
+        SetDims(TensorShape(m_groupSize, m_groupSize, m_outputDim, roiShape[1]), HasMBLayout());
     }
 
     void BackpropTo(const size_t /*inputIndex*/, const FrameRange& fr) override;
