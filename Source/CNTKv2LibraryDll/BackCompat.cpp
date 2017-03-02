@@ -350,6 +350,7 @@ namespace CNTK
                     primitiveFunctionConfigParameters[PrimitiveFunction::AttributeNameLowerPad] = AsNDShape(convolutionNode->LowerPad());
                     primitiveFunctionConfigParameters[PrimitiveFunction::AttributeNameUpperPad] = AsNDShape(convolutionNode->UpperPad());
                     primitiveFunctionConfigParameters[PrimitiveFunction::AttributeNameTranspose] = convolutionNode->Transpose();
+                    primitiveFunctionConfigParameters[PrimitiveFunction::AttributeNameOutputShape] = AsNDShape(convolutionNode->OutputShape());
                     primitiveFunctionConfigParameters[PrimitiveFunction::AttributeNameMaxTempMemSizeInSamples] = convolutionNode->MaxTempMemSizeInSamples();
 
                     opType = PrimitiveOpType::Convolution;
@@ -464,6 +465,10 @@ namespace CNTK
                     primitiveFunctionConfigParameters[PrimitiveFunction::AttributeNameBlankTokenId] = edNode->BlankTokenId();
 
                     opType = PrimitiveOpType::ForwardBackward;
+                }
+                else if (node->OperationName() == OperationNameOf(CosDistanceWithNegativeSamplesNode))
+                {
+                    opType = PrimitiveOpType::CosDistanceWithNegativeSamples;
                 }
                 else if ((node->OperationName() == OperationNameOf(MeanNode)) || (node->OperationName() == OperationNameOf(InvStdDevNode)))
                 {
