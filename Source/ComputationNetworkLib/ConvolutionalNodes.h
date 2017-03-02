@@ -781,7 +781,33 @@ public:
         ReleaseMatrixToPool(m_tempMatrix, matrixPool);
     }
 
-    void ForwardProp(const FrameRange& fr) override;
+    void ForwardProp(const FrameRange& fr) override
+    {
+        // [4 x roisPerImage x N] -- first dimension is roiSize (4), second is rois-per-image, third is mb size
+        size_t roisPerImage = (size_t)GetInputSampleLayout(1)[1];
+
+        auto inputShape = GetInputSampleLayout(0);
+        Matrix<ElemType> inputSlice = Input(0)->ValueFor(fr);
+        Matrix<ElemType> ROIs = Input(1)->ValueFor(fr);
+
+        // our output slice for this minibatch.
+        Matrix<ElemType> outputSlice = ValueFor(fr);
+
+        // input slice is [W x H x C x N]; cols are images.
+        // ROIs is [4 x roisPerImage x N]; cols are ROIs for different images.
+        // each ROI is (x, y, w, h) relative to original image size.
+        size_t inputW = (size_t)inputShape[0];
+        size_t inputH = (size_t)inputShape[1];
+        size_t inChannels = (size_t)inputShape[2];
+        size_t outChannels = (size_t)m_outputDim;
+        size_t groupSize = (size_t)m_groupSize;
+        size_t outW = groupSize;
+        size_t outH = groupSize;
+
+        m_tempMatrix->Resize(outW * outH * outChannels * roisPerImage, inputSlice.GetNumCols());
+        inputSlice.PSROIPoolingForward(roisPerImage, inputSlice.GetNumCols(), groupSize, inChannels, outChannels,
+                                       inputW, inputH, outW, outH, ROIs, outputSlice, *m_tempMatrix);
+    }
 
     void Save(File& fstream) const override
     {
@@ -823,7 +849,10 @@ public:
         SetDims(TensorShape(m_groupSize, m_groupSize, m_outputDim, roiShape[1]), HasMBLayout());
     }
 
-    void BackpropTo(const size_t /*inputIndex*/, const FrameRange& fr) override;
+    void BackpropTo(const size_t /*inputIndex*/, const FrameRange& fr) override
+    {
+        NOT_IMPLEMENTED;
+    }
 
     void CopyTo(ComputationNodeBasePtr nodeP, const std::wstring& newName, const CopyNodeFlags flags) const override
     {

@@ -56,6 +56,8 @@ namespace CNTK
     /*static*/ const std::wstring PrimitiveFunction::AttributeNameTranspose = L"transpose";
     /*static*/ const std::wstring PrimitiveFunction::AttributeNameMaxTempMemSizeInSamples = L"maxTempMemSizeInSamples";
     /*static*/ const std::wstring PrimitiveFunction::AttributeNameROIOutputShape = L"roiOutputShape";
+    /*static*/ const std::wstring PrimitiveFunction::AttributeNamePSROIGroupSize = L"psRoiGroupSize";
+    /*static*/ const std::wstring PrimitiveFunction::AttributeNamePSROIOutputDim = L"psRoiOutputDim";
     /*static*/ const std::wstring PrimitiveFunction::AttributeNamePoolingType = L"poolingType";
     /*static*/ const std::wstring PrimitiveFunction::AttributeNamePoolingWindowShape = L"poolingWindowShape";
     /*static*/ const std::wstring PrimitiveFunction::AttributeNameSpatial = L"spatial";
@@ -448,7 +450,7 @@ namespace CNTK
                             if (roisShape[0] != 4)
                                 InvalidArgument("PSROIPoolingNode: ROI input must have the following shape: [4 x roisPerImage].");
 
-                            outputShape = { psROIGroupSize, psROIGroupSize, psROIOutputDim, roisShape[1] };
+                            outputShape = { (size_t)psROIGroupSize, (size_t)psROIGroupSize, (size_t)psROIOutputDim, roisShape[1] };
                             break;
                         }
                         case PrimitiveOpType::Pooling:
