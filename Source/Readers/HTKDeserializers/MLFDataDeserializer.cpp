@@ -51,6 +51,7 @@ MLFDataDeserializer::MLFDataDeserializer(CorpusDescriptorPtr corpus, const Confi
 {
     // TODO: This should be read in one place, potentially given by SGD.
     m_frameMode = (ConfigValue)cfg("frameMode", "true");
+    
 
     // MLF cannot control chunking.
     if (primary)
@@ -75,6 +76,7 @@ MLFDataDeserializer::MLFDataDeserializer(CorpusDescriptorPtr corpus, const Confi
 
     size_t dimension = config.GetLabelDimension();
 
+    m_withPhoneBoundaries = streamConfig(L"phoneBoundaries", "false");
     wstring labelMappingFile = streamConfig(L"labelMappingFile", L"");
     InitializeChunkDescriptions(corpus, config, labelMappingFile, dimension);
     InitializeStream(inputName, dimension);
@@ -101,6 +103,8 @@ MLFDataDeserializer::MLFDataDeserializer(CorpusDescriptorPtr corpus, const Confi
 
     std::wstring precision = labelConfig(L"precision", L"float");;
     m_elementType = AreEqualIgnoreCase(precision, L"float") ? ElementType::tfloat : ElementType::tdouble;
+
+    m_withPhoneBoundaries = labelConfig(L"phoneBoundaries", "false");
 
     wstring labelMappingFile = labelConfig(L"labelMappingFile", L"");
     InitializeChunkDescriptions(corpus, config, labelMappingFile, dimension);
@@ -150,7 +154,8 @@ void MLFDataDeserializer::InitializeChunkDescriptions(CorpusDescriptorPtr corpus
         vector<size_t> sequencePhoneBoundaries; // Phone boundaries of given sequence
         foreach_index(i, utterance)
         {
-            sequencePhoneBoundaries.push_back(utterance[i].firstframe);
+            if (m_withPhoneBoundaries)
+                sequencePhoneBoundaries.push_back(utterance[i].firstframe);
             const auto& timespan = utterance[i];
             if ((i == 0 && timespan.firstframe != 0) ||
                 (i > 0 && utterance[i - 1].firstframe + utterance[i - 1].numframes != timespan.firstframe))
