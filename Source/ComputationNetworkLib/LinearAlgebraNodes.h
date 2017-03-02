@@ -474,13 +474,17 @@ public:
     {
         // If argument A is minibatch data, then this must be performed frame-by-frame, sequence-by-sequence, one GEMM call each.
         // This will be inefficient. We hope this will be the baseline of a future, more efficient TensorView-based implementation.
-        if (!fr.IsOneColumnWrt(InputRef(0).GetMBLayout()))
+        auto inputMBLayout = InputRef(0).GetMBLayout();
+        if (!fr.IsOneColumnWrt(inputMBLayout))
         {
             if (ReduceSequenceAxis())
             {
                 // only works in PAR mode
                 if (!fr.IsAllFrames())
                     RuntimeError("%ls %ls operation can perform sequence axis reduction only for all frames.", NodeName().c_str(), OperationName().c_str());
+
+                if (inputMBLayout->HasSequenceBeyondBegin() || inputMBLayout->HasSequenceBeyondEnd())
+                    RuntimeError("%ls %ls operation cannot perform sequence axis reduction for truncated sequence.", NodeName().c_str(), OperationName().c_str());
 
                 ForwardProp_ReduceSequenceAxis();
                 return;
