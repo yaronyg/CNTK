@@ -51,6 +51,8 @@
 # TODO: Build static libraries for common dependencies that are shared by multiple 
 # targets, e.g. eval and CNTK.
 
+export
+
 ARCH=$(shell uname)
 
 ifndef BUILD_TOP
@@ -1303,6 +1305,12 @@ python: $(PYTHON_LIBS)
 ALL += python
 
 endif
+
+.PHONY: java
+java: $(ALL)
+	$(MAKE) -C bindings/java
+
+ALL += java
 
 ########################################
 # General compile and dependency rules
