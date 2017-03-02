@@ -132,28 +132,28 @@ ComputationNetwork::PARTraversalFlowControlNode::PARTraversalFlowControlNode(con
         }
     }
 }
+/*static*/ void ComputationNetwork::PARTraversalFlowControlNode::ForwardProp(const ComputationNodeBasePtr& node, const FrameRange& fr)
+{
+    if (node->IsOutOfDateWrtInputs())
+    {
+        node->BeginForwardProp();
+        node->ForwardProp(fr.WithLayout(node->GetMBLayout()));
+        node->EndForwardProp();
+
+        node->BumpEvalTimeStamp();
+
+        // Extreme Tracing, part 1/4
+        if (node->HasEnvironmentPtr() && node->Environment().ShouldDumpNode())
+            DumpNode<float>(node, /*dumpGradient=*/false) || DumpNode<double>(node, false);
+    }
+}
+
 /*virtual*/ void ComputationNetwork::PARTraversalFlowControlNode::ForwardProp(const FrameRange& fr) /*override*/
 {
     for (auto& node : m_nestedNodes)
-    {
-#if 0
-        if (dynamic_pointer_cast<LearnableParameter<float>>(node))
-            dynamic_pointer_cast<ComputationNode<float>>(node)->DebugLogMinibatch();
-#endif
-        if (node->IsOutOfDateWrtInputs())
-        {
-            node->BeginForwardProp();
-            node->ForwardProp(fr.WithLayout(node->GetMBLayout()));
-            node->EndForwardProp();
-
-            node->BumpEvalTimeStamp();
-
-            // Extreme Tracing, part 1/4
-            if (node->HasEnvironmentPtr() && node->Environment().ShouldDumpNode())
-                DumpNode<float>(node, /*dumpGradient=*/false) || DumpNode<double>(node, false);
-        }
-    }
+        ForwardProp(node, fr);
 }
+
 /*virtual*/ void ComputationNetwork::PARTraversalFlowControlNode::Backprop(const FrameRange& fr, bool childrenInThisLoop, bool childrenInOuterLoop) /*override*/
 {
     childrenInThisLoop, childrenInOuterLoop; // TODO: think through what these mean when coming from PAR mode
@@ -1015,10 +1015,6 @@ void ComputationNetwork::AllocateAllMatrices(const std::vector<ComputationNodeBa
 
     bool performingBackPropagation = (trainRootNode != nullptr);
 
-    // Construct the composite forward prop eval order by enumerating the
-    // nodes corresponding to each of our roots in global eval oder
-    forwardPropRoots = SortByGlobalEvalOrder(forwardPropRoots);
-
     // Create a composite Eval order with the specified nodes as roots
     // For each node determine parents and whether the output of the
     // node is needed during back propagation
@@ -1074,6 +1070,7 @@ void ComputationNetwork::AllocateAllMatrices(const std::vector<ComputationNodeBa
 
     m_matrixPool.ResetStepCounter(); 
     set<ComputationNodeBasePtr> completedEvaluate;
+    compositeForwardPropEvalOrder = SortByGlobalEvalOrder(compositeForwardPropEvalOrder);
     for (auto& nodeIter : compositeForwardPropEvalOrder)
     {
         nodeIter->SetOutputNeededDuringBackprop(outputValueNeededDuringBackProp[nodeIter]);
