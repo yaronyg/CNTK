@@ -312,12 +312,12 @@ namespace CNTK
         for (auto i = 0; i < numValues; i++)
         {
             // Push index to packing queue if the gradient's size is less than threshold size
-            if (GetBufferSize(inputValues[i]) < m_packThresholdSizeInBytes && (inputValues[i]->GetDataType() == DataType::Float))
+            if (inputValues[i]->GetDataType() == DataType::Float)
             {
                 packedFloatGradientsSizeInBytes += GetBufferSize(inputValues[i]);
                 packedFloatGradientsIndex.push_back(i);
             }
-            else if (GetBufferSize(inputValues[i]) < m_packThresholdSizeInBytes && (inputValues[i]->GetDataType() == DataType::Double))
+            else if (inputValues[i]->GetDataType() == DataType::Double)
             {
                 packedDoubleGradientsSizeInBytes += GetBufferSize(inputValues[i]);
                 packedDoubleGradientsIndex.push_back(i);
@@ -346,6 +346,7 @@ namespace CNTK
             valuesToAggregate.push_back(inputValues[packedFloatGradientsIndex.front()]);
             valuesAfterAggregate.push_back(outputValues[packedFloatGradientsIndex.front()]);
             packedFloatGradientsIndex.clear();
+            aggregationBufferFloat.reset();
         }
 
         if (packedDoubleGradientsIndex.size() > 1)
@@ -358,6 +359,7 @@ namespace CNTK
             valuesToAggregate.push_back(inputValues[packedDoubleGradientsIndex.front()]);
             valuesAfterAggregate.push_back(outputValues[packedDoubleGradientsIndex.front()]);
             packedDoubleGradientsIndex.clear();
+            aggregationBufferDouble.reset();
         }
 
         if (aggregationBufferFloat == nullptr && aggregationBufferDouble == nullptr)
