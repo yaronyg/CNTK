@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 #
 # Copyright (c) Microsoft. All rights reserved.
 #
@@ -234,7 +234,11 @@ function is_hardlinked ()
     if test -e $1 && test -e $2
     then
         r=yes
-        [ "`stat -c '%i' $1`" != "`stat -c '%i' $2`" ] && r=no
+        if [ "$(uname -s)" = "Darwin" ]; then
+            [ "`stat -f '%i' $1`" != "`stat -f '%i' $2`" ] && r=no
+        else
+            [ "`stat -c '%i' $1`" != "`stat -c '%i' $2`" ] && r=no
+        fi
     fi
     echo $r
 }
@@ -1136,8 +1140,7 @@ makefile=$build_top/Makefile
 if test $(is_hardlinked "$configure" "$build_top/configure") = no
 then
     echo Generating $makefile
-    realconf=`readlink -f $configure`
-    dir=`dirname $realconf`
+    dir=$(cd "$(dirname "$configure")"; pwd -P)
     echo "#Generate Makefile" > $makefile
     echo dir=$dir >> $makefile
     echo BUILD_TOP=$build_top >> $makefile
@@ -1146,7 +1149,11 @@ then
     printf '\t$(MAKE) -C $(dir) BUILD_TOP=$(BUILD_TOP) $@\n' >> $makefile
 fi
 echo run
+if [ "$(uname -s)" = "Darwin" ]; then
+echo '>make -j $(sysctl -n hw.logicalcpu) all'
+else
 echo '>make -j $(nproc) all'
+fi
 echo to build
 
 # vim:set expandtab tabstop=4 shiftwidth=4:
