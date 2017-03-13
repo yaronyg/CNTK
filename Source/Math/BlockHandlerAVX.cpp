@@ -3,7 +3,11 @@
 // Licensed under the MIT license. See LICENSE.md file in the project root for full licence information.
 //
 #include "stdafx.h"
+#if defined(__APPLE__)
+#include <malloc/malloc.h>
+#else
 #include <malloc.h>
+#endif
 #include <xmmintrin.h>
 #include <emmintrin.h>
 #include <tmmintrin.h>

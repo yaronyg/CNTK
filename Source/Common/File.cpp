@@ -25,6 +25,10 @@
 #include <unistd.h>
 #include <linux/limits.h> // for PATH_MAX
 #endif
+#ifdef __APPLE__
+#include <unistd.h>
+#include <limits.h> // for PATH_MAX
+#endif
 
 #define PCLOSE_ERROR -1
 #define WRITE_BUFFER_SIZE (1024 * 1024)

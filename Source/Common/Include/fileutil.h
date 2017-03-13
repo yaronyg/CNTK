@@ -14,7 +14,7 @@
 #include "Windows.h" // for mmreg.h and FILETIME
 #include <mmreg.h>
 #endif
-#ifdef __unix__
+#if defined(__unix__) || defined(__APPLE__)
 #include <sys/types.h>
 #include <sys/stat.h>
 #endif
@@ -43,7 +43,7 @@
 FILE* fopenOrDie(const std::string& pathname, const char* mode);
 FILE* fopenOrDie(const std::wstring& pathname, const wchar_t* mode);
 
-#ifndef __unix__
+#ifdef _WIN32
 // ----------------------------------------------------------------------------
 // fsetmode(): set mode to binary or text
 // ----------------------------------------------------------------------------

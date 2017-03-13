@@ -16,7 +16,7 @@ This requires you to install the [Intel MKL SDK](https://software.intel.com/en-u
 Then, in this directory,
 * extend the file `headers.txt` to expose new headers,
 * extend the file `functions.txt` to expose new functions, and
-* use `build-linux.sh` or `build-windows.cmd` to build for your platform.
+* use `build-linux.sh` or `build-windows.cmd` or `build-macos.sh` to build for your platform.
 
 For further documentation please see the Developer Guide for the Intel® MKL, in particular
 [Building Custom Shared Objects (Linux)](https://software.intel.com/en-us/node/528533) and

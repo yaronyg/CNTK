@@ -93,11 +93,14 @@ SOURCEDIR:= Source
 INCLUDEPATH:= $(addprefix $(SOURCEDIR)/, Common/Include CNTKv2LibraryDll CNTKv2LibraryDll/API CNTKv2LibraryDll/proto ../Examples/Extensibility/CPP Math CNTK ActionsLib ComputationNetworkLib SGDLib SequenceTrainingLib CNTK/BrainScript Readers/ReaderLib PerformanceProfilerDll)
 INCLUDEPATH+=$(PROTOBUF_PATH)/include
 # COMMON_FLAGS include settings that are passed both to NVCC and C++ compilers.
-COMMON_FLAGS:= -DHAS_MPI=$(HAS_MPI) -D_POSIX_SOURCE -D_XOPEN_SOURCE=600 -D__USE_XOPEN2K -std=c++11
+COMMON_FLAGS:= -DHAS_MPI=$(HAS_MPI) -D_POSIX_SOURCE -D__USE_XOPEN2K -std=c++11
 
 ifeq ($(ARCH),Darwin)
+# Both of the common flags below are needed just so we can use wcscasecmp and wcsncasecmp in Platform.h
+COMMON_FLAGS += -mmacosx-version-min=10.7 -D_XOPEN_SOURCE=700
 LIBEXT:=dylib
 else
+COMMON_FLAGS += -D_XOPEN_SOURCE=600
 LIBEXT:=so
 endif
 

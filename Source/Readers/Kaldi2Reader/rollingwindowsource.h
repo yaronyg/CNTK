@@ -343,7 +343,7 @@ public:
 #ifdef _WIN32
                         key = regex_replace((std::wstring) ppath, wregex(L"\\.[^\\.\\\\/:]*$"), std::wstring()); // delete extension (or not if none)
 #endif
-#ifdef __unix__
+#if defined(__unix__) || defined(__APPLE__)
                         key = removeExtension(basename(ppath));
 #endif
                         if (labels[0].find(key) == labels[0].end())

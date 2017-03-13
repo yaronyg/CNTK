@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 #
 # Copyright (c) Microsoft. All rights reserved.
 #
@@ -42,5 +42,5 @@ cp -p README-for-redistributable.txt Publish/$CNTKCUSTOMMKLVERSION/README.txt
 cp -p ../../LICENSE.md Publish/$CNTKCUSTOMMKLVERSION
 
 cd Publish
-tar -czf ../CNTKCustomMKL-Linux-$CNTKCUSTOMMKLVERSION.tgz $CNTKCUSTOMMKLVERSION
+tar -czf ../CNTKCustomMKL-macOS-$CNTKCUSTOMMKLVERSION.tgz $CNTKCUSTOMMKLVERSION
 cd ..

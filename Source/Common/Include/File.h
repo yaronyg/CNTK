@@ -13,7 +13,7 @@
 #define NOMINMAX
 #include "Windows.h"
 #endif
-#ifdef __unix__
+#if defined(__unix__) || defined(__APPLE__)
 #include <unistd.h>
 #endif
 #include "fileutil.h" // for f{ge,pu}t{,Text}()
@@ -76,7 +76,7 @@ static void attempt(int retries, const FUNCTION& body)
 // wait a little, then try again
 #ifdef _WIN32
             ::Sleep(1000);
-#else // assuming __unix__
+#else // assuming __unix__ or __APPLE__
             ::sleep(1);
 #endif
         }

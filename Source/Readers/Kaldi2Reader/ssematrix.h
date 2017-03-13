@@ -12,14 +12,18 @@
 #include "simple_checked_arrays.h" // ... for dotprod(); we can eliminate this I believe
 #include "ssefloat4.h"
 #include <stdexcept>
-#ifndef __unix__
+#ifdef _WIN32
 #include <ppl.h>
 #include "pplhelpers.h"
 #include "numahelpers.h"
 #endif
 #include "fileutil.h" // for saving and reading matrices
 #include <limits>     // for NaN
+#if defined(__APPLE__)
+#include <malloc/malloc.h>
+#else
 #include <malloc.h>
+#endif
 
 namespace msra { namespace math {
 
@@ -1401,7 +1405,7 @@ class ssematrix : public ssematrixbase
         throw std::bad_exception(buf);
     }
 #endif
-#ifdef __unix__
+#if defined(__unix__) || defined(__APPLE__)
     static void failed(size_t nbytes)
     {
         static /*not thread-safe--for diagnostics only*/ char buf[80] = {0};
@@ -1428,7 +1432,7 @@ class ssematrix : public ssematrixbase
             _aligned_free(p);
     }
 #endif
-#ifdef __unix__
+#if defined(__unix__) || defined(__APPLE__)
     template <typename T>
     static T *new_sse(size_t nbytes)
     {

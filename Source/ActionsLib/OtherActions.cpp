@@ -547,11 +547,11 @@ void DoTopologyPlot(const ConfigParameters& config)
     if (!renderCmd.empty())
     {
         fprintf(stderr, "Executing third-party tool for rendering dot:\n%ls\n", renderCmd.c_str());
-#ifdef __unix__
+#ifdef _WIN32
+        _wsystem(renderCmd.c_str());
+#else
         auto rc = system(msra::strfun::utf8(renderCmd).c_str());
         rc; // ignoring the result--this gets flagged by gcc if we don't save the return value
-#else
-        _wsystem(renderCmd.c_str());
 #endif
     }
     fprintf(stderr, "Done.\n");

@@ -18,7 +18,7 @@
 #include <stdio.h>
 #ifdef __WINDOWS__
 #endif
-#ifdef __unix__
+#if defined(__unix__) || defined(__APPLE__)
 #include <sys/types.h>
 #include <sys/stat.h>
 #endif

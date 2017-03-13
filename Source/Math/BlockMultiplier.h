@@ -4,7 +4,11 @@
 //
 #pragma once
 #include "BlockMultiplierPlatform.h"
+#if defined(__APPLE__)
+#include <malloc/malloc.h>
+#else
 #include <malloc.h>
+#endif
 #include <xmmintrin.h>
 #include <emmintrin.h>
 #include <tmmintrin.h>

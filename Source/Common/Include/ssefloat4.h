@@ -10,7 +10,7 @@
 #ifdef _WIN32
 #include <intrin.h> // for intrinsics
 #endif
-#ifdef __unix__
+#if defined(__unix__) || defined(__APPLE__)
 #if !defined(__aarch64__)
 #include <x86intrin.h>
 #else

@@ -184,7 +184,7 @@ public:
         mUnkStr = unkstr;
 
         mFile.close();
-#ifdef __unix__
+#if defined(__unix__) || defined(__APPLE__)
         mFile.open(ws2s(fileName), wifstream::in);
 #else
         mFile.open(fileName, wifstream::in);
@@ -196,7 +196,7 @@ public:
     void ParseReset()
     {
         mFile.close();
-#ifdef __unix__
+#if defined(__unix__) || defined(__APPLE__)
         mFile.open(ws2s(mFileName), wifstream::in);
 #else
         mFile.open(mFileName, wifstream::in);

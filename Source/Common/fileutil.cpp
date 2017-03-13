@@ -20,7 +20,7 @@
 #include "fileutil.h"
 #include "ProgressTracing.h"
 
-#ifdef __unix__
+#if defined(__unix__) || defined(__APPLE__)
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -614,7 +614,7 @@ void fsetpos(FILE* f, uint64_t reqpos)
     // actually perform the seek
     fpos_t post = reqpos;
     int rc = ::fsetpos(f, &post);
-#else // assuming __unix__
+#else // assuming 
     off_t post = (off_t) reqpos;
     static_assert(sizeof(off_t) >= sizeof(reqpos), "64-bit file offsets not enabled");
     if ((decltype(reqpos)) post != reqpos)
@@ -2071,7 +2071,7 @@ static inline std::wstring mbstowcs(const std::string& p) // input: MBCS
 
 wstring s2ws(const string& str)
 {
-#ifdef __unix__
+#if defined(__unix__) || defined(__APPLE__)
     return mbstowcs(str);
 #else
     typedef std::codecvt_utf8<wchar_t> convert_typeX;
@@ -2083,7 +2083,7 @@ wstring s2ws(const string& str)
 
 string ws2s(const wstring& wstr)
 {
-#ifdef __unix__
+#if defined(__unix__) || defined(__APPLE__)
     return wcstombs(wstr);
 #else
     typedef codecvt_utf8<wchar_t> convert_typeX;

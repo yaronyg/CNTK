@@ -292,7 +292,7 @@ class minibatchutterancesourcemulti : public minibatchsource
         static const size_t maxutterancesperchunk = 65535;
         unsigned short frameindex; // frame index within the utterance
         static const size_t maxframesperutterance = 65535;
-#elif __unix__ // (sadly, the compiler makes this 8 bytes, not 6)
+#elif defined(__unix__) || defined(__APPLE__) // (sadly, the compiler makes this 8 bytes, not 6)
         unsigned short chunkindex;     // lives in this chunk (index into randomizedchunks[])
         unsigned short utteranceindex; // utterance index in that chunk
         static const size_t maxutterancesperchunk = 65535;
