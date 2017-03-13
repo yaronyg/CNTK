@@ -22,8 +22,8 @@ from cntk.losses import *
 from cntk.metrics import *
 # End to remove
 
-TIMES_REDUCE_ALL_STATIC_AXES               = cntk_py.TimesReduceAllStaticAxes
-TIMES_REDUCE_ALL_STATIC_AND_SEQUENCE_AXES  = cntk_py.TimesReduceAllStaticAndSequenceAxes
+TIMES_NO_INFERRED_INPUT_RANK                            = cntk_py.TimesNoInferredInputRank
+TIMES_REDUCE_SEQUENCE_AXIS_WITHOUT_INFERRED_INPUT_RANK  = cntk_py.TimesReduceSequenceAxisWithoutInferredInputRank
 
 @typemap
 def combine(operands, name=''):
@@ -827,17 +827,17 @@ def log_add_exp(left, right, name=''):
 INFINITELY_REPEAT = cntk_py.MinibatchSource.infinitely_repeat
 
 @typemap
-def times(left, right, output_rank=1, infer_input_rank_to_map=TIMES_REDUCE_ALL_STATIC_AXES, name=''):
+def times(left, right, output_rank=1, infer_input_rank_to_map=TIMES_NO_INFERRED_INPUT_RANK, name=''):
     '''
     The output of this operation is the matrix product of the two input matrices.
     It supports broadcasting. Sparse is supported in the left operand, if it is a matrix.
     The operator '@' has been overloaded such that in Python 3.5 and later X @ W equals times(X, W).
     
     For better performance on times operation on sequence which is followed by sequence.reduce_sum, use
-    infer_input_rank_to_map=TIMES_REDUCE_ALL_STATIC_AND_SEQUENCE_AXES, i.e. replace following:
+    infer_input_rank_to_map=TIMES_REDUCE_SEQUENCE_AXIS_WITHOUT_INFERRED_INPUT_RANK, i.e. replace following:
         sequence.reduce_sum(times(seq1, seq2))
     with:
-        times(seq1, seq2, infer_input_rank_to_map=TIMES_REDUCE_ALL_STATIC_AND_SEQUENCE_AXES)
+        times(seq1, seq2, infer_input_rank_to_map=TIMES_REDUCE_SEQUENCE_AXIS_WITHOUT_INFERRED_INPUT_RANK)
 
     Example:
         >>> C.times([[1,2],[3,4]], [[5],[6]]).eval()
@@ -1902,22 +1902,24 @@ def slice(x, axis, begin_index, end_index, name=''):
     Slice the input along an axis.
 
     Example:
-        >>> # Slice using input variable
+        >>> # slice using input variable
         >>> # create 2x3 matrix
         >>> x1 = C.input_variable((2,3))
         >>> # slice index 1 (second) at first axis
         >>> C.slice(x1, 0, 1, 2).eval({x1: np.asarray([[[[1,2,-3],
         ...                                              [4, 5, 6]]]],dtype=np.float32)})
         array([[[[ 4.,  5.,  6.]]]], dtype=float32)
+        <BLANKLINE>
         >>> # slice index 0 (first) at second axis
         >>> C.slice(x1, 1, 0, 1).eval({x1: np.asarray([[[[1,2,-3],
         ...                                              [4, 5, 6]]]],dtype=np.float32)})
         array([[[[ 1.],
                  [ 4.]]]], dtype=float32)
 
-        >>> #slice using constant
+        <BLANKLINE>
+        >>> # slice using constant
         >>> data = np.asarray([[1, 2, -3],
-        ...                     [4, 5,  6]], dtype=np.float32)
+        ...                    [4, 5,  6]], dtype=np.float32)
         >>> x = C.constant(value=data)
         >>> C.slice(x, 0, 1, 2).eval()
         array([[ 4.,  5.,  6.]], dtype=float32)
@@ -1925,7 +1927,15 @@ def slice(x, axis, begin_index, end_index, name=''):
         array([[ 1.],
                [ 4.]], dtype=float32)
 
-    NumPy's way of slicing works, too:
+        <BLANKLINE>
+        >>> # slice using the index overload
+        >>> data = np.asarray([[1, 2, -3],
+        ...                    [4, 5,  6]], dtype=np.float32)
+        >>> x = C.constant(value=data)
+        >>> x[0].eval()
+        array([[ 1.,  2.,  -3.]], dtype=float32)
+        >>> x[0, [1,2]].eval()
+        array([[ 2.,  -3.]], dtype=float32)
 
     Example:
         #TODO: Make following lines work. Uncomment when done

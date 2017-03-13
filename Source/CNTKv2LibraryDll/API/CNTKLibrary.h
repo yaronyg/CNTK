@@ -30,6 +30,7 @@
 #endif
 
 #include "CNTKLibraryInternals.h"
+#include "Constants.h"
 
 namespace CNTK
 {
@@ -2146,7 +2147,27 @@ namespace CNTK
         /// The created Value object contains a copy of the specified 'sequences' data.
         ///
         template <typename ElementType>
-        CNTK_API static ValuePtr Create(size_t dimension, const std::vector<std::vector<size_t>>& oneHotSequences, const std::vector<bool>& sequenceStartFlags, const DeviceDescriptor& device, bool readOnly = false);
+        CNTK_API static ValuePtr Create(const NDShape& sampleShape, const std::vector<std::vector<size_t>>& oneHotSequences, const std::vector<bool>& sequenceStartFlags, const DeviceDescriptor& device, bool readOnly = false);
+
+        ///
+        /// Create a new Value object containing a collection of variable length sequences of one hot vectors
+        /// The created Value object contains a copy of the specified 'sequences' data.
+        ///
+        template <typename ElementType>
+        static ValuePtr Create(const NDShape& sampleShape, const std::vector<std::vector<size_t>>& oneHotSequences, const DeviceDescriptor& device, bool readOnly = false)
+        {
+            return Create<ElementType>(sampleShape, oneHotSequences, {}, device, readOnly);
+        }
+
+        ///
+        /// Create a new Value object containing a collection of variable length sequences of one hot vectors
+        /// The created Value object contains a copy of the specified 'sequences' data.
+        ///
+        template <typename ElementType>
+        static ValuePtr Create(size_t dimension, const std::vector<std::vector<size_t>>& oneHotSequences, const std::vector<bool>& sequenceStartFlags, const DeviceDescriptor& device, bool readOnly = false)
+        {
+            return Create<ElementType>(NDShape({ dimension }), oneHotSequences, sequenceStartFlags, device, readOnly);
+        }
 
         ///
         /// Create a new Value object containing a collection of variable length sequences of one hot vectors
@@ -2971,6 +2992,11 @@ namespace CNTK
         CNTK_API static FunctionPtr LoadModel(const std::wstring& modelFile, const DeviceDescriptor& computeDevice = DeviceDescriptor::UseDefaultDevice());
 
         ///
+        /// Load a Function from a memory buffer
+        ///
+        CNTK_API static FunctionPtr LoadModel(char *modelBuffer, size_t modelBufferLength, const DeviceDescriptor& computeDevice = DeviceDescriptor::UseDefaultDevice());
+
+        ///
         /// Prints the entire graph underlying this Function to stderr
         ///
         CNTK_API void PrintGraph() const;
@@ -3321,8 +3347,8 @@ namespace CNTK
     // special values for Times inferInputRankToMap
     enum : int
     {
-        TimesReduceAllStaticAxes            = -1, // the default, reduce all static axes in the right operand that matches left
-        TimesReduceAllStaticAndSequenceAxes = -2, // reduce all static axes and sequence axis in the output of Times. Currently only support cases like (m x k x *s x *b) * (k x *s x *b) -> (m x *b)
+        TimesNoInferredInputRank                        = -1, // the default, do not infer left operand input rank from right operand
+        TimesReduceSequenceAxisWithoutInferredInputRank = -2, // reduce sequence axis. Currently only support cases like (m x k) x (k) -> (m) for sequences
     };
 
     CNTK_API FunctionPtr Times(const Variable& leftOperand, const Variable& rightOperand, size_t outputRank, int inferInputRankToMap, const std::wstring& name = L"");
@@ -3334,7 +3360,7 @@ namespace CNTK
     ///
     inline FunctionPtr Times(const Variable& leftOperand, const Variable& rightOperand, size_t outputRank, const std::wstring& name = L"")
     {
-        return Times(leftOperand, rightOperand, outputRank, TimesReduceAllStaticAxes, name);
+        return Times(leftOperand, rightOperand, outputRank, TimesNoInferredInputRank, name);
     }
 
     ///
@@ -3788,6 +3814,9 @@ namespace CNTK
         CNTK_API static TrainingParameterSchedule<T> Deserialize(const Dictionary& dictionary);
 
     private:
+
+        friend class Learner;
+
         CNTK_API void ConstructSchedule(const std::vector<std::pair<size_t, T>>& schedule);
 
         CNTK_API TrainingParameterSchedule(const Dictionary& dictionary);
@@ -3957,11 +3986,11 @@ namespace CNTK
 
         ///
         /// Sets a new learning rate overriding the schedule parameter used to construct this learner.
+        /// The new schedule is adjusted to be relative to the current number of elapsed samples/sweeps:
+        /// the 0 offset in the new schedule corresponds to the current value of elapsed samples/sweeps, 
+        /// and it takes effect from the current position in the training process onwards.
         ///
-        virtual void ResetLearningRate(const LearningRateSchedule& learningRateSchedule)
-        {
-            m_learningRateSchedule = learningRateSchedule;
-        }
+        CNTK_API virtual void ResetLearningRate(const LearningRateSchedule& learningRateSchedule);
 
         ///
         /// Resets smoothed gradients.
@@ -4750,7 +4779,7 @@ namespace CNTK
     ///
     /// Built-in MPI-based communicator.
     ///
-    CNTK_API DistributedCommunicatorPtr MPICommunicator();
+    CNTK_API DistributedCommunicatorPtr MPICommunicator(size_t packThresholdSizeInBytes = DEFAULT_PACK_THRESHOLD_SIZE_IN_BYTES);
 
     ///
     /// Distributed communicator that allows quantized aggregations.
