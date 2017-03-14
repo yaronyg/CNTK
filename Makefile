@@ -53,6 +53,12 @@
 
 ARCH=$(shell uname)
 
+ifeq ($(ARCH),Darwin)
+   READLINK="greadlink"
+else
+   READLINK="readlink"
+endif
+
 ifndef BUILD_TOP
 BUILD_TOP=.
 endif
@@ -969,8 +975,8 @@ $(MULTIVERSO_LIB):
 		-DBoost_NO_SYSTEM_PATHS=TRUE \
 		-DBOOST_ROOT:PATHNAME=$(BOOST_PATH) \
 		-DBOOST_LIBRARY_DIRS:FILEPATH=$(BOOST_PATH) \
-		-DLIBRARY_OUTPUT_PATH=$(shell readlink -f $(LIBDIR)) \
-		-DEXECUTABLE_OUTPUT_PATH=$(shell readlink -f $(BINDIR)) \
+		-DLIBRARY_OUTPUT_PATH=$(shell $(READLINK) -f $(LIBDIR)) \
+		-DEXECUTABLE_OUTPUT_PATH=$(shell $(READLINK) -f $(BINDIR)) \
 		-DCMAKE_BUILD_TYPE=$(MULTIVERSO_CMAKE_BUILDTYPE) \
 		-B./Source/Multiverso/build/$(BUILDTYPE) -H./Source/Multiverso
 	@make VERBOSE=1 -C ./Source/Multiverso/build/$(BUILDTYPE) -j multiverso
@@ -1297,8 +1303,8 @@ python: $(PYTHON_LIBS)
             export CNTK_LIBRARIES="$(PYTHON_LIBS)"; \
             export CNTK_EXTRA_LIBRARIES=$$(ldd $(LIBDIR)/* | grep "^\s.*=> " | cut -d ">" -f 2- --only-delimited | cut -d "(" -f 1 --only-delimited | sort -u | grep -Ff <(echo $(PYTHON_EXTRA_LIBS_BASENAMES) | xargs -n1)); \
             test -x $(SWIG_PATH); \
-            export CNTK_LIB_PATH=$$(readlink -f $(LIBDIR)); \
-            PYTHONDIR=$$(readlink -f $(PYTHONDIR)); \
+            export CNTK_LIB_PATH=$$($(READLINK) -f $(LIBDIR)); \
+            PYTHONDIR=$$($(READLINK) -f $(PYTHONDIR)); \
             test $$? -eq 0; \
             cd bindings/python; \
             export PATH=$(SWIG_PATH):$$PATH; \

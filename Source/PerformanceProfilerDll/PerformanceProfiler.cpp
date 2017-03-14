@@ -381,8 +381,10 @@ unsigned int GetThreadId()
 {
 #ifdef _WIN32
     return (unsigned int)GetCurrentThreadId();
-#else
+#elif defined(__unix__)
     return (unsigned int)syscall(SYS_gettid);
+#elif defined(__APPLE__)
+    return static_cast<unsigned int>(std::hash<std::thread::id>()(std::this_thread::get_id()));
 #endif
 }
 

@@ -10,6 +10,15 @@
 #else
 #ifdef __GNUC__
 #include <stdlib.h>
+#ifdef __APPLE__
+void* aligned_alloc(size_t alignment, size_t size) {
+    void* p;
+    if (posix_memalign(&p, alignment, size) != 0) {
+        p = NULL;
+    }
+    return p;
+}
+#endif
 #define ALIGNED_ALLOC(bytes,alignment) aligned_alloc(alignment,bytes)
 #define ALIGNED_FREE(ptr) free(ptr)
 //#define FORCEINLINE __attribute__((always_inline)) 

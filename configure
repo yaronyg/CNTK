@@ -7,6 +7,8 @@
 # ==============================================================================
 #
 
+is_apple=$(expr "$(uname -s)" = "Darwin" );
+
 configure=$0
 build_top=$PWD
 
@@ -234,7 +236,7 @@ function is_hardlinked ()
     if test -e $1 && test -e $2
     then
         r=yes
-        if [ "$(uname -s)" = "Darwin" ]; then
+        if [ $is_apple=1] ; then
             [ "`stat -f '%i' $1`" != "`stat -f '%i' $2`" ] && r=no
         else
             [ "`stat -c '%i' $1`" != "`stat -c '%i' $2`" ] && r=no
@@ -1140,7 +1142,12 @@ makefile=$build_top/Makefile
 if test $(is_hardlinked "$configure" "$build_top/configure") = no
 then
     echo Generating $makefile
-    dir=$(cd "$(dirname "$configure")"; pwd -P)
+    if [ $is_apple=1 ] ; then
+         realconf=`greadlink -f $configure`
+    else
+         realconf=`readlink -f $configure`
+    fi
+    dir=`dirname $realconf`
     echo "#Generate Makefile" > $makefile
     echo dir=$dir >> $makefile
     echo BUILD_TOP=$build_top >> $makefile
@@ -1149,10 +1156,10 @@ then
     printf '\t$(MAKE) -C $(dir) BUILD_TOP=$(BUILD_TOP) $@\n' >> $makefile
 fi
 echo run
-if [ "$(uname -s)" = "Darwin" ]; then
-echo '>make -j $(sysctl -n hw.logicalcpu) all'
+if [ $is_apple=1 ] ; then
+     echo '>make -j $(sysctl -n hw.logicalcpu) all'
 else
-echo '>make -j $(nproc) all'
+     echo '>make -j $(nproc) all'
 fi
 echo to build
 
