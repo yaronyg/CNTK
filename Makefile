@@ -247,7 +247,9 @@ ifeq ("$(BUILDTYPE)","debug")
   endif
 
   CXXFLAGS += -g
-  LDFLAGS += -rdynamic
+  ifneq ($(ARCH),Darwin)
+     LDFLAGS += -rdynamic
+  endif	 
   COMMON_FLAGS += -D_DEBUG -DNO_SYNC
   CUFLAGS += -O0 -g -use_fast_math -lineinfo  $(GENCODE_FLAGS)
 endif
@@ -260,7 +262,9 @@ ifeq ("$(BUILDTYPE)","release")
   endif
 
   CXXFLAGS += -g -O4
-  LDFLAGS += -rdynamic
+  ifneq ($(ARCH),Darwin)
+     LDFLAGS += -rdynamic
+  endif	 
   COMMON_FLAGS += -DNDEBUG -DNO_SYNC
   CUFLAGS += -O3 -g -use_fast_math $(GENCODE_FLAGS)
 endif
@@ -309,6 +313,10 @@ PP_SRC =\
 	$(SOURCEDIR)/Common/File.cpp \
 	$(SOURCEDIR)/Common/fileutil.cpp \
 	$(SOURCEDIR)/Common/ExceptionWithCallStack.cpp \
+
+ifeq ($(ARCH),Darwin)
+   PP_SRC += $(SOURCEDIR)/Common/TimerUtility.cpp
+endif	
 
 PP_OBJ := $(patsubst %.cpp, $(OBJDIR)/%.o, $(PP_SRC))
 
