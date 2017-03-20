@@ -666,7 +666,7 @@ HTKMLFREADER:=$(LIBDIR)/HTKMLFReader.$(LIBEXT)
 ALL_LIBS+=$(HTKMLFREADER)
 SRC+=$(HTKMLFREADER_SRC)
 
-$(HTKMLFReader): $(HTKMLFREADER_OBJ) | $(CNTKMATH_LIB)
+$(HTKMLFREADER): $(HTKMLFREADER_OBJ) | $(CNTKMATH_LIB)
 	@echo $(SEPARATOR)
 	$(CXX) $(LDFLAGS) -shared $(patsubst %,-L%, $(LIBDIR) $(LIBPATH)) $(patsubst %,$(RPATH)%, $(ORIGINDIR) $(LIBPATH)) -o $@ $^ -l$(CNTKMATH)
 
@@ -986,7 +986,8 @@ $(MULTIVERSO_LIB):
 		-DLIBRARY_OUTPUT_PATH=$(shell $(READLINK) -f $(LIBDIR)) \
 		-DEXECUTABLE_OUTPUT_PATH=$(shell $(READLINK) -f $(BINDIR)) \
 		-DCMAKE_BUILD_TYPE=$(MULTIVERSO_CMAKE_BUILDTYPE) \
-		-B./Source/Multiverso/build/$(BUILDTYPE) -H./Source/Multiverso
+		-B./Source/Multiverso/build/$(BUILDTYPE) -H./Source/Multiverso \
+		-Wno-dev
 	@make VERBOSE=1 -C ./Source/Multiverso/build/$(BUILDTYPE) -j multiverso
 
 UNITTEST_MULTIVERSO_SRC = \

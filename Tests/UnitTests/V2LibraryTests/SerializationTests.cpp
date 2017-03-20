@@ -95,9 +95,9 @@ DictionaryValue CreateDictionaryValue(DictionaryValue::Type type, size_t maxSize
     case DictionaryValue::Type::Bool:
         return DictionaryValue(!!(rng() % 2));
     case DictionaryValue::Type::Int:
-        return DictionaryValue(rng());
+        return DictionaryValue((size_t)rng());
     case DictionaryValue::Type::SizeT:
-        return DictionaryValue(rng());
+        return DictionaryValue((size_t)rng());
     case DictionaryValue::Type::Float:
         return DictionaryValue(float_dist(rng));
     case DictionaryValue::Type::Double:
