@@ -23,7 +23,6 @@ from cntk.logging import *
 
 _VARIABLE_OR_FUNCTION = (cntk_py.Variable, cntk_py.Function)
 
-
 # To __remove__
 def one_hot(batch, num_classes, dtype=None, device=None):
     import cntk
@@ -379,7 +378,7 @@ def Signature(*args, **kwargs):
      # is identical to:
      def sqr(x):
          return x*x
-     sqr.__annotations__ = {'x': int}``
+     sqr.__annotations__ = {'x': int}
     '''
     # this function returns another function which is the actual decorator applied to the def:
     def add_annotations(f):
