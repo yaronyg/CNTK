@@ -1,9 +1,8 @@
-from cntk import cntk_py
+from cntk import cntk_py, Value
 from cntk.device import DeviceDescriptor, cpu
-from cntk.utils import variable_value_to_seq, Record, \
-        get_python_function_arguments, map_function_arguments
-from cntk.internal import map_if_possible, typemap, sanitize_var_map, sanitize_batch, sanitize_dtype_cntk, _as_tuple, sanitize_variable_value_dict
-from cntk.ops.variables import Variable
+from cntk.internal import map_if_possible, typemap, sanitize_var_map, sanitize_batch, sanitize_dtype_cntk, _as_tuple, sanitize_variable_value_dict, sanitize_Function_attributes
+from cntk.internal.utils import get_python_function_arguments, map_function_arguments
+from ..variables import Record, Variable
 from enum import Enum, unique
 
 
@@ -101,7 +100,7 @@ class Function(cntk_py.Function):
         # Unannotated parameters will yield placeholder_variables instead.
         def make_arg_variable(name, annotations):
             from .. import placeholder, input
-            from .variables import Variable
+            from ..variables import Variable
             if isinstance(annotations.get(name, None), Variable.Type):
                 var_type = annotations[name]
                 return input(name=name, **var_type)
@@ -236,7 +235,7 @@ class Function(cntk_py.Function):
         arg_map = self.argument_map(*arg_types, **kwarg_types) # map type specs to Function parameters
         def to_input(arg_type, name):
             from cntk import input
-            from .variables import Variable
+            from ..variables import Variable
             if isinstance(arg_type, (int, tuple)): # just passed a shape
                 return input(shape=_as_tuple(arg_type), name=name)
             elif isinstance(arg_type, Variable.Type): # full type given as Tensor(...)
@@ -381,7 +380,7 @@ class Function(cntk_py.Function):
             # and then looks it up by name, as that will fail although both instances are identical.
             from cntk.logging.graph import find_by_name
             root = self.block_root if self.is_block else self
-            item = typemap(find_by_name)(root, name)
+            item = typemap(find_by_name)(root, name, depth=1)
             if item:
                 return item
 
@@ -426,7 +425,7 @@ class Function(cntk_py.Function):
         '''
         List of the attributes of the function
         '''
-        return super(Function, self).attributes()
+        return sanitize_Function_attributes(super(Function, self).attributes())
 
     @typemap
     def clone(self, method, substitutions=None):
@@ -655,7 +654,7 @@ class Function(cntk_py.Function):
                                              keep_for_backward)
         if as_numpy:
             for k in output_map:
-                output_map[k] = variable_value_to_seq(output_map[k], k)
+                output_map[k] = Value.to_seq(output_map[k], k)
 
         return state, output_map
 
@@ -708,7 +707,7 @@ class Function(cntk_py.Function):
 
         if as_numpy:
             for var, value in var_gradients.items():
-                var_gradients[var] = variable_value_to_seq(value, var)
+                var_gradients[var] = Value.to_seq(value, var)
 
         return var_gradients
 
@@ -772,9 +771,9 @@ class Function(cntk_py.Function):
 
         if as_numpy:
             for k in output_map:
-                output_map[k] = variable_value_to_seq(output_map[k], k)
+                output_map[k] = Value.to_seq(output_map[k], k)
             for k in wrt_map:
-                wrt_map[k] = variable_value_to_seq(wrt_map[k], k)
+                wrt_map[k] = Value.to_seq(wrt_map[k], k)
 
         if len(output_map) == 0:
             return sanitize_variable_value_dict(wrt_map)
@@ -933,7 +932,7 @@ class Function(cntk_py.Function):
         specified substitution.
 
         Args:
-            substitution (:class:`~cntk.ops.variables.Variable`): the variable
+            substitution (:class:`~cntk.variables.Variable`): the variable
              that will replace the placeholder
 
         Returns:
@@ -944,7 +943,7 @@ class Function(cntk_py.Function):
         return super(Function, self).replace_placeholder(substitution)
 
     @typemap
-    def find_all_with_name(self, name):
+    def find_all_with_name(self, name, depth=0):
         '''
         Returns a list of primitive function with ``name`` in the graph
         starting from this node. Throws an exception if ``name`` occurs
@@ -962,6 +961,8 @@ class Function(cntk_py.Function):
 
         Args:
             name (str): names to look for
+            depth (int, default 0): how deep into the block hierarchy the DFS
+             algorithm should go into. Set to -1 for infinite depth.
 
         Returns:
             list of :class:`Function` objects matching ``name``
@@ -970,11 +971,11 @@ class Function(cntk_py.Function):
             :func:`find_by_name`
         '''
         from cntk.logging import graph
-        return graph.find_all_with_name(self, name)
+        return graph.find_all_with_name(self, name, depth)
 
     # TODO have a better name for combine() in this case
     @typemap
-    def find_by_name(self, name):
+    def find_by_name(self, name, depth=0):
         '''
         Returns a primitive function with ``name`` in the graph starting from
         this node. Throws an exception if ``name`` occurs multiple times. If
@@ -999,6 +1000,8 @@ class Function(cntk_py.Function):
 
         Args:
             name (str): names to look for
+            depth (int, default 0): how deep into the block hierarchy the DFS
+             algorithm should go into. Set to -1 for infinite depth.
 
         Returns:
             :class:`Function` object matching ``name``
@@ -1007,7 +1010,7 @@ class Function(cntk_py.Function):
             :func:`find_all_with_name`
         '''
         from cntk.logging import graph
-        return graph.find_by_name(self, name)
+        return graph.find_by_name(self, name, depth)
 
     @typemap
     def save(self, filename):
@@ -1135,7 +1138,7 @@ class UserFunction(Function):
              A BackPropState instance, which is used by :func:`backward`.
         '''
         if self.as_numpy:
-            arguments = tuple(variable_value_to_seq(v, self.inputs[i]) for i, v in enumerate(arguments))
+            arguments = tuple(Value.to_seq(v, self.inputs[i]) for i, v in enumerate(arguments))
 
         map_if_possible(outputs)
         map_if_possible(outputs_to_retain)
@@ -1190,7 +1193,7 @@ class UserFunction(Function):
 
         if self.as_numpy:
             for v in root_gradients:
-                root_gradients[v] = variable_value_to_seq(root_gradients[v], v)
+                root_gradients[v] = Value.to_seq(root_gradients[v], v)
 
             state = cntk_py.UserBackPropState.data(state)
 
@@ -1206,8 +1209,7 @@ class UserFunction(Function):
                 break
             root_gradients = rg
 
-        possible_wrt = [input for input in self.inputs if input.needs_gradient]
-        if len(possible_wrt) > 1:
+        if len(self.inputs) > 1:
             self.backward(state, root_gradients, variables)
         else:
             result = self.backward(state, root_gradients)
@@ -1216,10 +1218,8 @@ class UserFunction(Function):
 
         if self.as_numpy:
             for k,v in variables.items():
-                if v is None:
-                    raise ValueError('gradients were not provided for all variables')
-
-                variables[k] = sanitize_batch(k, v, None, device)
+                if v is not None:
+                    variables[k] = sanitize_batch(k, v, None, device)
 
     def _infer_outputs(self, outputs):
         outputs.extend(self.infer_outputs())
