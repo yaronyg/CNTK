@@ -45,7 +45,7 @@ public:
             KeyToId = [](const std::string& key)
             {
                 size_t id = 0;
-                int converted = sscanf_s(key.c_str(), "%" PRIu64, &id);
+                int converted = sscanf_s(key.c_str(), "%zu", &id);
                 if (converted != 1)
                     RuntimeError("Invalid numeric sequence id '%s'", key.c_str());
                 return id;

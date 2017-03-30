@@ -673,11 +673,13 @@ public:
         // check & print meaningful error message
         SmallVector<bool> dimsToDrop(GetRank(), false);
         for (size_t k = 1; k < GetRank(); k++)
-            if (k != splitPoint)
-                if (!CanFlatten(k))
+            if (k != splitPoint) {
+                if (!CanFlatten(k)) {
                     InvalidArgument("%sShape [%s] is not dense at dimension %d.", (errorPrefix != nullptr) ? (std::string(errorPrefix) + ": ").c_str() : "", string(*this).c_str(), (int)k);
-                else
+                } else {
                     dimsToDrop[k - 1] = true;
+                }
+            }
         // handle case where last dimension missing, e.g. u'v where u and v are column vectors
         if (splitPoint == GetRank())
         {

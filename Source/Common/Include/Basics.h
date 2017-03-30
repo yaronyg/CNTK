@@ -80,7 +80,7 @@ __declspec_noreturn static inline void ThrowFormattedVA(const char* format, va_l
     throw ExceptionWithCallStack<E>(buffer, callstack);
 }
 
-#ifndef _MSC_VER // TODO: what is the correct trigger for gcc?
+#if !defined(_MSC_VER) && !defined(__APPLE__) // TODO: what is the correct trigger for gcc?
 template <class E>
 __declspec_noreturn void ThrowFormatted(const char* format, ...) __attribute__((format(printf, 1, 2)));
 #endif

@@ -56,6 +56,11 @@ ARCH=$(shell uname)
 ifeq ($(ARCH),Darwin)
    READLINK=greadlink
    SHAREDSWITCH=-dynamiclib -Wl,-undefined,dynamic_lookup
+   CXXFLAGS+=-Wno-potentially-evaluated-expression
+   CXXFLAGS+=-Wno-inconsistent-missing-override
+   CXXFLAGS+=-Wno-parentheses
+   CXXFLAGS+=-Wno-unused-value
+   CXXFLAGS+=-D_DARWIN_C_SOURCE # Needed to get pthread.h functions
 else
    READLINK=readlink
    SHAREDSWITCH=-shared
@@ -112,11 +117,9 @@ COMMON_FLAGS += -D_XOPEN_SOURCE=600
 LIBEXT:=so
 endif
 
-CPPFLAGS:= 
-CXXFLAGS:= $(SSE_FLAGS) -std=c++0x -fopenmp -fpermissive -fPIC -Werror -fcheck-new
+CXXFLAGS+=$(SSE_FLAGS) -std=c++0x -fopenmp -fpermissive -fPIC -Werror -fcheck-new
 LIBPATH:=
 LIBS_LIST:=
-LDFLAGS:=
 
 CXXVER_GE480:= $(shell expr `$(CXX) -dumpversion | sed -e 's/\.\([0-9][0-9]\)/\1/g' -e 's/\.\([0-9]\)/0\1/g' -e 's/^[0-9]\{3,4\}$$/&00/'` \>= 40800)
 ifeq ($(CXXVER_GE480),1)
@@ -263,7 +266,7 @@ ifeq ("$(BUILDTYPE)","release")
     GENCODE_FLAGS := $(GENCODE_SM30) $(GENCODE_SM35) $(GENCODE_SM50)
   endif
 
-  CXXFLAGS += -g -O4
+  CXXFLAGS += -g -O3
   ifneq ($(ARCH),Darwin)
      LDFLAGS += -rdynamic
   endif	 

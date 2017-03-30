@@ -277,11 +277,13 @@ public:
         while (!file.IsEOF())
         {
             file.GetLine(str);
-            if (str.empty())
-                if (file.IsEOF())
+            if (str.empty()) {
+                if (file.IsEOF()) {
                     break;
-                else
+                } else {
                     RuntimeError("LoadLabelFile: Invalid empty line in label file.");
+                }
+            }
 
             retLabels.push_back(trim(str));
         }

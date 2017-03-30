@@ -1537,6 +1537,7 @@ public:
         fputTag(f, "EMAT");
     }
 
+#ifndef __APPLE__
     void write(const HANDLE f, const char *name) const
     {
         fputTag(f, "BMAT");
@@ -1551,6 +1552,7 @@ public:
         }
         fputTag(f, "EMAT");
     }
+#endif
 
     void read(FILE *f, const char *name)
     {
@@ -1571,6 +1573,7 @@ public:
         fcheckTag(f, "EMAT");
     }
 
+#ifndef __APPLE__
     // TODO: should this be a function template?
     void read(const HANDLE f, const char *name)
     {
@@ -1590,6 +1593,7 @@ public:
         }
         fcheckTag(f, "EMAT");
     }
+#endif
 
     // paging support (used in feature source)
     void topagefile(FILE *f) const
