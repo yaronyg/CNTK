@@ -930,7 +930,7 @@ class StringFunction : public String
         // negative index indexes from end; index may exceed
         let begin = min(ibegin < 0 ? s.size() + ibegin : ibegin, s.size());
         // 'num' is allowed to exceed
-        let num = min(inum < 0 ? SIZE_MAX : inum, s.size() - begin);
+        let num = min(inum < 0 ? s.max_size() : inum, s.size() - begin);
         return s.substr(begin, num);
     }
     // TODO: RegexReplace!
